@@ -23,6 +23,7 @@ enum UserRole {
 enum UserStatus {
   ACTIVE
   DISABLED
+  @@map("user_status")
 }
 
 enum PhoneStatus {
@@ -229,6 +230,8 @@ enum DeviceStatus {
   OFFLINE
   UNKNOWN
   DISABLED
+
+  @@map("device_status")
 }
 
 enum WhatsAppSessionStatus {
@@ -239,6 +242,8 @@ enum WhatsAppSessionStatus {
   DISABLED
   ERROR
   UNKNOWN
+
+  @@map("whatsapp_session_status")
 }
 
 model RegisteredDevice {

@@ -166,8 +166,20 @@ export const devicesApi = {
 // ============================================================
 
 export const whatsappApi = {
-  setup: (data: SetupWhatsAppRequest) =>
-    api.post<WhatsAppSession>('/whatsapp/setup', data).then((r) => r.data),
+  create: (phoneId: string, data: { deviceId: string }) =>
+    api
+      .post<WhatsAppSession>(
+        `/phone-numbers/${phoneId}/whatsapp`,
+        data
+      )
+      .then((r) => r.data),
+  setup: (phoneId: string, data: SetupWhatsAppRequest) =>
+    api
+      .post<WhatsAppSession>(
+        `/phone-numbers/${phoneId}/whatsapp/setup`,
+        data
+      )
+      .then((r) => r.data),
 
   getSession: (phoneId: string) =>
     api.get<WhatsAppSession>(`/whatsapp/sessions/${phoneId}`).then((r) => r.data),

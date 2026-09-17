@@ -18,6 +18,7 @@ const DevicesPage: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   // Register form state
+  const [deviceCode, setDeviceCode] = useState('');
   const [friendlyName, setFriendlyName] = useState('');
   const [hostname, setHostname] = useState('');
 
@@ -32,11 +33,20 @@ const DevicesPage: React.FC = () => {
   });
 
   const registerMutation = useMutation({
-    mutationFn: () =>
-      devicesApi.register({
-        friendlyName,
-        hostname: hostname || undefined,
-      }),
+    mutationFn: () => {
+      const code = deviceCode.trim();
+      const name = friendlyName.trim();
+
+      if (!code || !name) {
+        throw new Error('Device Code and Friendly Name are required');
+      }
+
+      return devicesApi.register({
+        deviceCode: code,
+        friendlyName: name,
+        hostname: hostname.trim() || undefined,
+      });
+    },
     onSuccess: (device) => {
       setRegisteredDevice(device);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -63,6 +73,7 @@ const DevicesPage: React.FC = () => {
     setShowRegisterDialog(false);
     setRegisteredDevice(null);
     setFriendlyName('');
+    setDeviceCode('');
     setHostname('');
     setCopied(false);
   };
@@ -122,11 +133,10 @@ const DevicesPage: React.FC = () => {
               enabled: !item.enabled,
             });
           }}
-          className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium ${
-            item.enabled
-              ? 'bg-green-100 text-green-700 hover:bg-green-200'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
+          className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium ${item.enabled
+            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
         >
           {item.enabled ? 'Enabled' : 'Disabled'}
         </button>
@@ -195,6 +205,21 @@ const DevicesPage: React.FC = () => {
                 </p>
 
                 <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium">
+                      Device Code
+                    </label>
+                    <input
+                      type="text"
+                      value={deviceCode}
+                      onChange={(e) => setDeviceCode(e.target.value)}
+                      placeholder="HRBY-PC-001"
+                      required
+                      maxLength={20}
+                      pattern="[A-Za-z0-9_-]+"
+                      className="mt-1 block w-full rounded-md border px-3 py-2"
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
                       Friendly Name <span className="text-red-500">*</span>

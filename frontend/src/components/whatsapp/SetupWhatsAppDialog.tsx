@@ -22,10 +22,24 @@ export const SetupWhatsAppDialog: React.FC<SetupWhatsAppDialogProps> = ({
   });
 
   const setupMutation = useMutation({
-    mutationFn: () =>
-      whatsappApi.setup({ phoneNumberId, deviceId: selectedDeviceId }),
+    mutationFn: async () => {
+      const data = {
+        deviceId: selectedDeviceId,
+      };
+
+      // Step 1: Create WhatsApp session mapping
+      await whatsappApi.create(phoneNumberId, data);
+
+      // Step 2: Start WhatsApp setup
+      return whatsappApi.setup(phoneNumberId, {
+        phoneNumberId,
+        deviceId: selectedDeviceId,
+      });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['phone-number', phoneNumberId] });
+      queryClient.invalidateQueries({
+        queryKey: ['phone-number', phoneNumberId],
+      });
       onClose();
     },
   });
@@ -57,11 +71,10 @@ export const SetupWhatsAppDialog: React.FC<SetupWhatsAppDialogProps> = ({
             {onlineDevices.map((device) => (
               <label
                 key={device.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
-                  selectedDeviceId === device.id
-                    ? 'border-primary-500 bg-primary-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${selectedDeviceId === device.id
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:border-gray-300'
+                  }`}
               >
                 <input
                   type="radio"
@@ -79,13 +92,12 @@ export const SetupWhatsAppDialog: React.FC<SetupWhatsAppDialogProps> = ({
                   </p>
                 </div>
                 <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                    device.status === 'ONLINE'
-                      ? 'bg-green-100 text-green-800'
-                      : device.status === 'OFFLINE'
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${device.status === 'ONLINE'
+                    ? 'bg-green-100 text-green-800'
+                    : device.status === 'OFFLINE'
                       ? 'bg-gray-100 text-gray-600'
                       : 'bg-yellow-100 text-yellow-800'
-                  }`}
+                    }`}
                 >
                   {device.status}
                 </span>

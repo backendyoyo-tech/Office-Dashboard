@@ -290,6 +290,7 @@ export interface UpdateUserRequest {
 }
 
 export interface RegisterDeviceRequest {
+  deviceCode: string;
   friendlyName: string;
   hostname?: string;
 }
