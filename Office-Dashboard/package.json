@@ -1,0 +1,53 @@
+{
+  "name": "hair-rap-dashboard",
+  "version": "1.0.0",
+  "description": "Hair Rap by YOYO - Social Media Dashboard with WhatsApp Session Management",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/_bootstrap.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:security": "vitest run tests/security",
+    "test:e2e": "vitest run tests/e2e",
+    "lint": "eslint src/ tests/",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
+    "pretest": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "argon2": "^0.41.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.11.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "eslint": "^9.0.0",
+    "prisma": "^6.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

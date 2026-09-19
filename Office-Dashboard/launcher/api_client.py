@@ -1,0 +1,219 @@
+"""
+Dashboard API communication for Hair Rap Launcher.
+Handles all HTTP communication with the dashboard backend.
+"""
+
+import requests
+import json
+import logging
+from typing import Optional
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class DashboardClient:
+    """Client for communicating with Hair Rap Dashboard API."""
+    
+    def __init__(self, dashboard_url: str, api_key: str, device_id: str = ""):
+        """
+        Initialize dashboard client.
+        
+        Args:
+            dashboard_url: Base URL of dashboard API
+            api_key: API key for authentication
+            device_id: Device ID (set after registration)
+        """
+        self.dashboard_url = dashboard_url.rstrip('/')
+        self.api_key = api_key
+        self.device_id = device_id
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}' if api_key else '',
+        })
+    
+    def register(self, device_code: str, friendly_name: str, hostname: str) -> dict:
+        """
+        Register this device with the dashboard.
+        
+        Args:
+            device_code: Device code (e.g., "PC-01")
+            friendly_name: Human-readable device name
+            hostname: Computer hostname
+            
+        Returns:
+            API response dictionary
+        """
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/register"
+        payload = {
+            "device_code": device_code,
+            "friendly_name": friendly_name,
+            "hostname": hostname,
+            "platform": "windows",
+            "launcher_version": "1.0.0",
+        }
+        
+        try:
+            response = self.session.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            
+            # Update device_id if provided
+            if 'device_id' in result:
+                self.device_id = result['device_id']
+                logger.info(f"Device registered with ID: {self.device_id}")
+            
+            return result
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Registration failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def heartbeat(self) -> dict:
+        """
+        Send heartbeat to dashboard.
+        
+        Returns:
+            API response dictionary
+        """
+        if not self.device_id:
+            return {"success": False, "error": "Device not registered"}
+        
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/heartbeat"
+        payload = {
+            "device_id": self.device_id,
+            "timestamp": self._get_timestamp(),
+        }
+        
+        try:
+            response = self.session.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Heartbeat failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def confirm_whatsapp_launch(self, session_id: str, success: bool, error: Optional[str] = None) -> dict:
+        """
+        Report WhatsApp session launch result.
+        
+        Args:
+            session_id: Session ID
+            success: Whether launch was successful
+            error: Error message if failed
+            
+        Returns:
+            API response dictionary
+        """
+        if not self.device_id:
+            return {"success": False, "error": "Device not registered"}
+        
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/whatsapp-confirm"
+        payload = {
+            "device_id": self.device_id,
+            "session_id": session_id,
+            "success": success,
+            "timestamp": self._get_timestamp(),
+        }
+        
+        if error:
+            payload["error"] = error
+        
+        try:
+            response = self.session.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Launch confirmation failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def report_status(self, session_id: str, status: str, error: Optional[str] = None) -> dict:
+        """
+        Report session status change.
+        
+        Args:
+            session_id: Session ID
+            status: New status (e.g., "launching", "running", "closed", "error")
+            error: Error message if applicable
+            
+        Returns:
+            API response dictionary
+        """
+        if not self.device_id:
+            return {"success": False, "error": "Device not registered"}
+        
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/whatsapp-status"
+        payload = {
+            "device_id": self.device_id,
+            "session_id": session_id,
+            "status": status,
+            "timestamp": self._get_timestamp(),
+        }
+        
+        if error:
+            payload["error"] = error
+        
+        try:
+            response = self.session.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Status report failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_pending_commands(self) -> list:
+        """
+        Get pending commands from dashboard.
+        
+        Returns:
+            List of pending commands
+        """
+        if not self.device_id:
+            return []
+        
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/whatsapp-launch"
+        params = {"device_id": self.device_id}
+        
+        try:
+            response = self.session.get(endpoint, params=params, timeout=30)
+            response.raise_for_status()
+            return response.json().get('commands', [])
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get commands: {e}")
+            return []
+    
+    def report_local_port(self, port: int) -> dict:
+        """
+        Report local server port to dashboard.
+        
+        Args:
+            port: Local server port
+            
+        Returns:
+            API response dictionary
+        """
+        if not self.device_id:
+            return {"success": False, "error": "Device not registered"}
+        
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/port"
+        payload = {
+            "device_id": self.device_id,
+            "port": port,
+        }
+        
+        try:
+            response = self.session.post(endpoint, json=payload, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Port report failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _get_timestamp(self) -> str:
+        """Get current timestamp in ISO format."""
+        from datetime import datetime
+        return datetime.utcnow().isoformat() + 'Z'
