@@ -43,12 +43,6 @@ const api = axios.create({
   },
 });
 
-
-// const api = axios.create({
-//   baseURL: API_BASE,
-//   withCredentials: true,
-// });
-
 // Request interceptor - add auth token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
