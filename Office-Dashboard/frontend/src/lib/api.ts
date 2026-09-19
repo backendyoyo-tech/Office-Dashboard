@@ -32,7 +32,8 @@ import type {
   Platform,
 } from '@/types';
 
-const API_BASE = '/api';
+// const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -41,6 +42,12 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+
+// const api = axios.create({
+//   baseURL: API_BASE,
+//   withCredentials: true,
+// });
 
 // Request interceptor - add auth token
 api.interceptors.request.use(
