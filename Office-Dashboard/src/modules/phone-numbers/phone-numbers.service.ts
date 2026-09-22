@@ -206,6 +206,7 @@ export class PhoneNumbersService {
         creator: { select: { id: true, fullName: true } },
         updater: { select: { id: true, fullName: true } },
         accountLinks: {
+          where: { platformAccount: { archivedAt: null } },
           include: {
             platformAccount: {
               include: { platform: true, credential: true, recoveryMethods: true },
@@ -410,6 +411,7 @@ export class PhoneNumbersService {
       where: { id: phoneId },
       include: {
         accountLinks: {
+          where: { platformAccount: { archivedAt: null } },
           include: {
             platformAccount: {
               include: { platform: true, credential: true, recoveryMethods: true },

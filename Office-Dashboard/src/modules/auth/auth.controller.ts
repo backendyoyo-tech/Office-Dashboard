@@ -13,6 +13,9 @@ const changePasswordSchema = z.object({
 });
 
 export class AuthController {
+  async logout(req: Request, res: Response, next: NextFunction) {
+    try { res.json(await authService.logout(req.user!.id, req)); } catch (err) { next(err); }
+  }
   async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = loginSchema.parse(req.body);

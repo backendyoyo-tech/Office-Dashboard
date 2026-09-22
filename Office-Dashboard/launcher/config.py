@@ -28,7 +28,8 @@ HEARTBEAT_INTERVAL = 60
 SESSION_BASE_PATH = r"C:\HairRap\WhatsAppSessions"
 
 # Local server port (0 = random available port)
-LOCAL_SERVER_PORT = 0
+LOCAL_SERVER_PORT = 12345
+DASHBOARD_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 # Config file path
 CONFIG_FILE_PATH = Path(__file__).parent / "launcher_config.json"
@@ -45,6 +46,7 @@ def load_config() -> dict:
         "heartbeat_interval": HEARTBEAT_INTERVAL,
         "session_base_path": SESSION_BASE_PATH,
         "local_server_port": LOCAL_SERVER_PORT,
+        "dashboard_origins": DASHBOARD_ORIGINS,
     }
     
     if CONFIG_FILE_PATH.exists():

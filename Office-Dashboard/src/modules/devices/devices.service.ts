@@ -66,6 +66,8 @@ export class DevicesService {
         launcherVersion: d.launcherVersion,
         lastSeenAt: d.lastSeenAt,
         enabled: d.enabled,
+        approvalState: d.approvalState,
+        supportsPlatformLauncher: d.supportsPlatformLauncher,
         // REPAIR D-006 — optimistic-locking token.
         version: d.version,
         createdBy: d.creator,
@@ -113,6 +115,9 @@ export class DevicesService {
       launcherVersion: device.launcherVersion,
       lastSeenAt: device.lastSeenAt,
       enabled: device.enabled,
+      approvalState: device.approvalState,
+      supportsPlatformLauncher: device.supportsPlatformLauncher,
+      version: device.version,
       createdBy: device.creator,
       whatsappSessions: device.whatsappSessions,
       createdAt: device.createdAt,
@@ -180,6 +185,49 @@ export class DevicesService {
       updatedAt: device.updatedAt,
       apiKey: rawKey,
     };
+  }
+
+  async approveLauncher(id: string, version: number, req: Request) {
+    const device = await prisma.registeredDevice.findUnique({ where: { id } });
+    if (!device) throw new NotFoundError(ErrorCode.DEVICE_NOT_FOUND, 'Device not found');
+    if (!device.enabled || !device.launcherApiKeyHash || device.approvalState === 'REVOKED') {
+      throw new ConflictError(ErrorCode.FORBIDDEN, 'Device must be paired and enabled before approval');
+    }
+    const updated = await updateWithVersion({
+      model: 'registeredDevice', id, expectedVersion: version,
+      data: { approvalState: 'APPROVED' },
+    });
+    await logAuditEvent({
+      actorUserId: req.user!.id, action: 'DEVICE_APPROVED', entityType: 'DEVICE', entityId: id,
+      metadata: { capability: 'platform-launcher', version: updated.version }, req,
+    });
+    return { id: updated.id, approvalState: updated.approvalState, supportsPlatformLauncher: updated.supportsPlatformLauncher, version: updated.version };
+  }
+
+  async revokeLauncher(id: string, version: number, req: Request) {
+    const result = await prisma.$transaction(async tx => {
+      const changed = await tx.registeredDevice.updateMany({
+        where: { id, version },
+        data: {
+          approvalState: 'REVOKED', supportsPlatformLauncher: false,
+          enabled: false, status: 'DISABLED', launcherApiKeyHash: null,
+          version: { increment: 1 },
+        },
+      });
+      if (changed.count !== 1) {
+        const exists = await tx.registeredDevice.findUnique({ where: { id }, select: { id: true } });
+        if (!exists) throw new NotFoundError(ErrorCode.DEVICE_NOT_FOUND, 'Device not found');
+        throw new ConflictError(ErrorCode.CONCURRENCY_CONFLICT, 'Device was changed; refresh and retry');
+      }
+      await tx.launchGrant.updateMany({ where: { deviceId: id, consumedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+      await tx.launchTicket.updateMany({ where: { deviceId: id, usedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+      return tx.registeredDevice.findUniqueOrThrow({ where: { id }, select: { id: true, approvalState: true, version: true } });
+    });
+    await logAuditEvent({
+      actorUserId: req.user!.id, action: 'DEVICE_REVOKED', entityType: 'DEVICE', entityId: id,
+      metadata: { capability: 'platform-launcher', version: result.version }, req,
+    });
+    return result;
   }
 
   async update(id: string, data: {

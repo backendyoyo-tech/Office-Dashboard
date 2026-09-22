@@ -8,6 +8,10 @@ import json
 import socket
 import threading
 import logging
+import hashlib
+import hmac
+import re
+import time
 from typing import Callable, Optional
 from urllib.parse import urlparse, parse_qs
 
@@ -22,6 +26,21 @@ class LocalCommandHandler(http.server.BaseHTTPRequestHandler):
     api_key: str = ""
     launch_callback: Optional[Callable] = None
     health_callback: Optional[Callable] = None
+    platform_callback: Optional[Callable] = None
+    device_id: str = ""
+    allowed_origins: tuple[str, ...] = ()
+
+    def do_OPTIONS(self):
+        if urlparse(self.path).path not in ('/platform-proof', '/launch-platform') or not self._origin_allowed():
+            self._send_error(403, 'Origin not approved')
+            return
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', self.headers['Origin'])
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Max-Age', '60')
+        self.send_header('Vary', 'Origin')
+        self.end_headers()
     
     def do_GET(self):
         """Handle GET requests."""
@@ -36,15 +55,81 @@ class LocalCommandHandler(http.server.BaseHTTPRequestHandler):
         """Handle POST requests."""
         parsed_path = urlparse(self.path)
         
-        if parsed_path.path == '/launch-whatsapp':
+        if parsed_path.path == '/platform-proof':
+            self._handle_platform_proof()
+        elif parsed_path.path == '/launch-platform':
+            self._handle_launch_platform()
+        elif parsed_path.path == '/launch-whatsapp':
             self._handle_launch_whatsapp()
         else:
             self._send_error(404, "Not Found")
+
+    def _origin_allowed(self) -> bool:
+        return self.headers.get('Origin', '') in self.allowed_origins
+
+    def _platform_json(self) -> dict | None:
+        if not self._origin_allowed():
+            self._send_error(403, 'Origin not approved')
+            return None
+        if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
+            self._send_error(415, 'JSON required')
+            return None
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if length < 1 or length > 8192:
+                raise ValueError('Invalid body length')
+            data = json.loads(self.rfile.read(length).decode('utf-8'))
+            if not isinstance(data, dict):
+                raise ValueError('JSON object required')
+            return data
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self._send_error(400, 'Invalid request')
+            return None
+
+    def _handle_platform_proof(self):
+        data = self._platform_json()
+        if data is None:
+            return
+        purpose = data.get('purpose')
+        reference = data.get('referenceId')
+        uuid = r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+        if purpose not in ('grant', 'confirm') or not isinstance(reference, str) or not re.fullmatch(uuid + (r':[1-9][0-9]*' if purpose == 'confirm' else ''), reference):
+            self._send_error(400, 'Invalid proof scope')
+            return
+        timestamp = int(time.time() * 1000)
+        message = f'{purpose}|{reference}|{self.device_id}|{timestamp}'.encode('utf-8')
+        key_hash = hashlib.sha256(self.api_key.encode('utf-8')).hexdigest().encode('ascii')
+        signature = hmac.new(key_hash, message, hashlib.sha256).hexdigest()
+        self._send_json_response(200, {
+            'deviceId': self.device_id, 'purpose': purpose, 'referenceId': reference,
+            'timestamp': timestamp, 'signature': signature,
+        })
+
+    def _handle_launch_platform(self):
+        data = self._platform_json()
+        if data is None:
+            return
+        ticket = data.get('ticket')
+        if not isinstance(ticket, str) or not 32 <= len(ticket) <= 4096:
+            self._send_error(400, 'Invalid launch ticket')
+            return
+        if not self.platform_callback:
+            self._send_error(503, 'Platform launcher not configured')
+            return
+        try:
+            result = type(self).platform_callback(ticket)
+            self._send_json_response(200 if result.get('success') else 502, result)
+        except Exception:
+            logger.exception('Platform launch failed')
+            self._send_error(500, 'Platform launch failed')
     
     def _handle_health(self):
         """Handle health check request."""
+        if self.headers.get('Origin') and not self._origin_allowed():
+            self._send_error(403, 'Origin not approved')
+            return
         if self.health_callback:
-            result = self.health_callback()
+            result = type(self).health_callback()
             self._send_json_response(200, result)
         else:
             self._send_json_response(200, {"status": "ok", "service": "hair-rap-launcher"})
@@ -79,7 +164,7 @@ class LocalCommandHandler(http.server.BaseHTTPRequestHandler):
         # Call launch callback
         if self.launch_callback:
             try:
-                result = self.launch_callback(request_data)
+                result = type(self).launch_callback(request_data)
                 self._send_json_response(200, result)
             except Exception as e:
                 logger.error(f"Launch callback error: {e}")
@@ -107,6 +192,9 @@ class LocalCommandHandler(http.server.BaseHTTPRequestHandler):
         response = json.dumps(data)
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
+        if self._origin_allowed() and urlparse(self.path).path in ('/health', '/platform-proof', '/launch-platform'):
+            self.send_header('Access-Control-Allow-Origin', self.headers['Origin'])
+            self.send_header('Vary', 'Origin')
         self.send_header('Content-Length', str(len(response)))
         self.end_headers()
         self.wfile.write(response.encode('utf-8'))
@@ -123,7 +211,7 @@ class LocalCommandHandler(http.server.BaseHTTPRequestHandler):
 class LocalCommandServer:
     """Local HTTP server for receiving commands from dashboard."""
     
-    def __init__(self, api_key: str, port: int = 0):
+    def __init__(self, api_key: str, port: int = 0, device_id: str = '', allowed_origins: tuple[str, ...] = ()):
         """
         Initialize local command server.
         
@@ -132,11 +220,17 @@ class LocalCommandServer:
             port: Port to listen on (0 = random available port)
         """
         self.api_key = api_key
+        self.device_id = device_id
+        self.allowed_origins = allowed_origins
         self.port = port
         self.server = None
         self.server_thread = None
         self.launch_callback = None
         self.health_callback = None
+        self.platform_callback = None
+
+    def set_platform_callback(self, callback: Callable):
+        self.platform_callback = callback
     
     def set_launch_callback(self, callback: Callable):
         """Set callback for launch commands."""
@@ -157,6 +251,9 @@ class LocalCommandServer:
         LocalCommandHandler.api_key = self.api_key
         LocalCommandHandler.launch_callback = self.launch_callback
         LocalCommandHandler.health_callback = self.health_callback
+        LocalCommandHandler.platform_callback = self.platform_callback
+        LocalCommandHandler.device_id = self.device_id
+        LocalCommandHandler.allowed_origins = self.allowed_origins
         
         # Create server bound to localhost only
         server_address = ('127.0.0.1', self.port)

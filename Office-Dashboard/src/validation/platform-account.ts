@@ -30,12 +30,12 @@ const profileUrlField = z
       (() => {
         try {
           const u = new URL(v);
-          return (u.protocol === 'http:' || u.protocol === 'https:') && !u.username && !u.password;
+          return u.protocol === 'https:' && !u.username && !u.password && !u.port && !u.hash;
         } catch {
           return false;
         }
       })(),
-    'Profile URL must be a valid absolute http(s) URL without embedded credentials',
+    'Profile URL must be a valid HTTPS URL without credentials, port or fragment',
   );
 
 export const createAccountSchema = z.object({

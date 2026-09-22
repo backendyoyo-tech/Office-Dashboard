@@ -36,6 +36,30 @@ class DashboardClient:
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {api_key}' if api_key else '',
         })
+
+    def report_platform_capability(self) -> dict:
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/platform-capability"
+        try:
+            response = self.session.post(endpoint, json={"launcherVersion": "2.0.0"}, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException:
+            return {"approved": False}
+
+    def consume_platform_ticket(self, ticket: str) -> dict:
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/platform-consume"
+        response = self.session.post(endpoint, json={"ticket": ticket}, timeout=15)
+        response.raise_for_status()
+        return response.json()
+
+    def acknowledge_platform_launch(self, operation_id: str, success: bool, error_code: str | None = None) -> dict:
+        endpoint = f"{self.dashboard_url}/api/v1/launcher/platform-ack"
+        payload = {"operationId": operation_id, "result": "DELIVERED" if success else "FAILED"}
+        if error_code:
+            payload["errorCode"] = error_code
+        response = self.session.post(endpoint, json=payload, timeout=15)
+        response.raise_for_status()
+        return response.json()
     
     def register(self, device_code: str, friendly_name: str, hostname: str) -> dict:
         """

@@ -13,6 +13,8 @@ router.get('/', (req, res, next) => devicesController.list(req, res, next));
 // REPAIR D-026 — stale-device sweep (ADMIN). Declared before '/:id' so the
 // literal path is not swallowed by the parameterised route.
 router.post('/sweep', requireAdmin, (req, res, next) => devicesController.sweep(req, res, next));
+router.post('/:id/approve-launcher', requireAdmin, (req, res, next) => devicesController.approveLauncher(req, res, next));
+router.post('/:id/revoke-launcher', requireAdmin, (req, res, next) => devicesController.revokeLauncher(req, res, next));
 
 router.get('/:id', (req, res, next) => devicesController.getById(req, res, next));
 

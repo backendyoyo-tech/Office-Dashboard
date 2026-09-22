@@ -1,9 +1,5 @@
 import prisma from '@/lib/db/prisma';
-import {
-  countIncompleteNumbers,
-  countCompleteNumbers,
-  countEmptyNumbers,
-} from '@/lib/completeness';
+import { countCompletenessNumbers } from '@/lib/completeness';
 import { effectiveDeviceStatus } from '@/lib/device-state';
 
 /**
@@ -54,12 +50,10 @@ export class DashboardService {
       errorSessions,
       loginIssueAccounts,
       disabledSessions,
-      completeNumbers,
-      incompleteNumbers,
       emptyNumbers,
-    ] = await Promise.all([
-      prisma.phoneNumber.count({ where: { status: 'ACTIVE' } }),
-      prisma.phoneNumber.count({ where: { status: 'ACTIVE' } }),
+    ] = await prisma.$transaction([
+      prisma.phoneNumber.count({ where: { archivedAt: null } }),
+      prisma.phoneNumber.count({ where: { status: 'ACTIVE', archivedAt: null } }),
       prisma.platformAccount.count({ where: { archivedAt: null } }),
       prisma.accountCredential.count(),
       prisma.appUser.count({ where: { status: 'ACTIVE' } }),
@@ -85,10 +79,12 @@ export class DashboardService {
       prisma.platformAccount.count({ where: { archivedAt: null, accountStatus: 'LOGIN_ISSUE' } }),
       prisma.whatsappSession.count({ where: { status: 'DISABLED' } }),
       // REPAIR D-004 — completeness is derived, so it is computed from stored fields.
-      countCompleteNumbers(),
-      countIncompleteNumbers(),
-      countEmptyNumbers(),
+      prisma.phoneNumber.count({ where: { status: 'ACTIVE', archivedAt: null, accountLinks: { none: {} } } }),
     ]);
+
+    // One projection computes both derived counts after the transaction.
+    // This bounds connection use on session poolers with small pool limits.
+    const { complete: completeNumbers, incomplete: incompleteNumbers } = await countCompletenessNumbers();
 
     const onlineDevices = enabledDevices.filter(d => effectiveDeviceStatus(d) === 'ONLINE').length;
     const offlineDevices = enabledDevices.length - onlineDevices;

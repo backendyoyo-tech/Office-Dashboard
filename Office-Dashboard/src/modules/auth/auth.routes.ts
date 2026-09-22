@@ -9,6 +9,7 @@ router.post('/login', (req, res, next) => authController.login(req, res, next));
 
 // Authenticated
 router.get('/me', authenticate, (req, res, next) => authController.getProfile(req, res, next));
+router.post('/logout', authenticate, (req, res, next) => authController.logout(req, res, next));
 router.post('/change-password', authenticate, (req, res, next) => authController.changePassword(req, res, next));
 
 export default router;

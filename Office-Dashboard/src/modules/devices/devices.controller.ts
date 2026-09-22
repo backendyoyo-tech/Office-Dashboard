@@ -2,8 +2,24 @@ import { Request, Response, NextFunction } from 'express';
 import { devicesService } from './devices.service';
 import { createDeviceSchema, updateDeviceSchema, listDeviceSchema } from '@/validation/device';
 import { uuidParamSchema } from '@/validation/common';
+import { z } from 'zod';
 
 export class DevicesController {
+  async approveLauncher(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = uuidParamSchema.parse(req.params);
+      const { version } = z.object({ version: z.number().int().positive() }).parse(req.body);
+      res.json(await devicesService.approveLauncher(id, version, req));
+    } catch (err) { next(err); }
+  }
+
+  async revokeLauncher(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = uuidParamSchema.parse(req.params);
+      const { version } = z.object({ version: z.number().int().positive() }).parse(req.body);
+      res.json(await devicesService.revokeLauncher(id, version, req));
+    } catch (err) { next(err); }
+  }
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const query = listDeviceSchema.parse(req.query);

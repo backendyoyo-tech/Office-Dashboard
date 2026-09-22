@@ -1,7 +1,8 @@
 import React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { phoneNumbersApi, platformAccountsApi } from '@/lib/api';
+import { phoneNumbersApi, platformAccountsApi, localLauncherApi } from '@/lib/api';
+import { PlatformLauncherControls } from '@/components/launcher/PlatformLauncherControls';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { StatusBadge, getPhoneStatusVariant, getAccountStatusVariant } from '@/components/shared/StatusBadge';
 import { WhatsAppSection } from '@/components/whatsapp/WhatsAppSection';
@@ -33,6 +34,10 @@ const NumberDetailPage: React.FC = () => {
     queryKey: ['phone-number', id],
     queryFn: () => phoneNumbersApi.getById(id!),
     enabled: !!id,
+  });
+  const { data: localLauncher } = useQuery({
+    queryKey: ['local-launcher-health'], queryFn: localLauncherApi.health,
+    enabled: canEdit, retry: false, staleTime: 30_000,
   });
 
   const archiveMutation = useMutation({
@@ -165,8 +170,9 @@ const NumberDetailPage: React.FC = () => {
               return (
                 <div
                   key={link.id}
-                  className="flex items-center justify-between rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
+                  className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50"
                 >
+                  <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
                       <span className="text-sm font-bold text-gray-600">
@@ -232,6 +238,11 @@ const NumberDetailPage: React.FC = () => {
                       <ExternalLink className="h-4 w-4" />
                     </Link>
                   </div>
+                  </div>
+                  {canEdit && account.platform?.slug !== 'whatsapp' && (
+                    <PlatformLauncherControls phoneId={phone.id} account={account}
+                      localDeviceId={localLauncher?.device_id || null} />
+                  )}
                 </div>
               );
             })}

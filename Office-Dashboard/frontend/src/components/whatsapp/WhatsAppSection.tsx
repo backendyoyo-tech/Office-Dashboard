@@ -21,6 +21,7 @@ export const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({ phoneNumberId,
   const [showSetupDialog, setShowSetupDialog] = useState(false);
   const [showChangeDeviceDialog, setShowChangeDeviceDialog] = useState(false);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [openMessage, setOpenMessage] = useState('');
 
   const canEdit = hasRole(UserRole.ADMIN, UserRole.EDITOR);
 
@@ -34,33 +35,16 @@ export const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({ phoneNumberId,
   const openMutation = useMutation({
     mutationFn: (phoneId: string) => whatsappApi.openSession(phoneId),
 
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['phone-number', phoneNumberId],
       });
-
-      const launchCommand =
-        data?.launchCommand ||
-        data?.data?.launchCommand;
-
-      const phoneE164 = launchCommand?.phoneE164;
-
-      if (!phoneE164) {
-        console.error('WhatsApp phone number missing:', data);
-        return;
-      }
-
-      // Remove +, spaces, hyphens and brackets
-      const phone = phoneE164.replace(/[^\d]/g, '');
-
-      // Open direct WhatsApp chat
-      const chatUrl = `https://web.whatsapp.com/send?phone=${phone}`;
-
-      window.open(chatUrl, '_blank', 'noopener,noreferrer');
+      setOpenMessage('Opening WhatsApp Web on the assigned device.');
     },
 
     onError: (error) => {
       console.error('Failed to open WhatsApp:', error);
+      setOpenMessage('Could not request WhatsApp launch. Check the assigned device.');
     },
   });
 
@@ -138,7 +122,7 @@ export const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({ phoneNumberId,
                 className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 <ExternalLink className="h-4 w-4" />
-                Open
+                Open on assigned PC
               </button>
             )}
             {session.status === WhatsAppSessionStatus.SETUP_REQUIRED && (
@@ -191,6 +175,8 @@ export const WhatsAppSection: React.FC<WhatsAppSectionProps> = ({ phoneNumberId,
           </div>
         )}
       </div>
+
+      {openMessage && <p role="status" className="mt-3 text-sm text-gray-700">{openMessage}</p>}
 
       {/* Session Details */}
       <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">

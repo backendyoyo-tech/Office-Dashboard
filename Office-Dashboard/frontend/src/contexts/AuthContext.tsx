@@ -7,7 +7,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginRequest) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasRole: (...roles: UserRole[]) => boolean;
 }
 
@@ -45,10 +45,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(response.user);
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
-    window.location.href = '/login';
+  const logout = async () => {
+    try { await authApi.logout(); } finally {
+      localStorage.removeItem('token');
+      setUser(null);
+      window.location.href = '/login';
+    }
   };
 
   const hasRole = (...roles: UserRole[]) => {

@@ -206,10 +206,15 @@ export class AuthService {
       parallelism: 4,
     });
 
-    await prisma.appUser.update({
-      where: { id: userId },
-      data: { passwordHash: newHash },
-    });
+    await prisma.$transaction([
+      prisma.appUser.update({
+        where: { id: userId },
+        data: { passwordHash: newHash, version: { increment: 1 }, refreshTokenHash: null, refreshTokenExpiresAt: null },
+      }),
+      prisma.launchGrant.updateMany({
+        where: { actorUserId: userId, consumedAt: null, revokedAt: null }, data: { revokedAt: new Date() },
+      }),
+    ]);
 
     await logAuditEvent({
       actorUserId: userId,
@@ -219,6 +224,17 @@ export class AuthService {
       req,
     });
 
+    return { success: true };
+  }
+
+  async logout(userId: string, req: Request) {
+    await prisma.$transaction([
+      prisma.appUser.update({ where: { id: userId }, data: { refreshTokenHash: null, refreshTokenExpiresAt: null } }),
+      prisma.launchGrant.updateMany({
+        where: { actorUserId: userId, consumedAt: null, revokedAt: null }, data: { revokedAt: new Date() },
+      }),
+    ]);
+    await logAuditEvent({ actorUserId: userId, action: 'USER_LOGOUT', entityType: 'USER', entityId: userId, req });
     return { success: true };
   }
 }

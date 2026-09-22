@@ -8,9 +8,12 @@ import { Pagination } from '@/components/shared/Pagination';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Plus, Copy, Check } from 'lucide-react';
 import type { RegisteredDevice, RegisterDeviceResponse } from '@/types';
+import { UserRole } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 const DevicesPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
@@ -49,6 +52,12 @@ const DevicesPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
     },
+  });
+
+  const approvalMutation = useMutation({
+    mutationFn: ({ id, version, approve }: { id: string; version: number; approve: boolean }) =>
+      approve ? devicesApi.approveLauncher(id, version) : devicesApi.revokeLauncher(id, version),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
   });
 
   const handleCopyApiKey = () => {
@@ -114,6 +123,7 @@ const DevicesPage: React.FC = () => {
       key: 'actions',
       header: 'Actions',
       render: (item) => (
+        <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -131,6 +141,21 @@ const DevicesPage: React.FC = () => {
         >
           {item.enabled ? 'Enabled' : 'Disabled'}
         </button>
+        {hasRole(UserRole.ADMIN) && item.approvalState !== 'APPROVED' && item.approvalState !== 'REVOKED' && (
+          <button className="rounded-md bg-blue-100 px-2.5 py-1.5 text-xs font-medium text-blue-700 disabled:opacity-50"
+            disabled={approvalMutation.isPending}
+            onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: true }); }}>
+            Approve launcher
+          </button>
+        )}
+        {hasRole(UserRole.ADMIN) && item.approvalState === 'APPROVED' && (
+          <button className="rounded-md bg-red-100 px-2.5 py-1.5 text-xs font-medium text-red-700 disabled:opacity-50"
+            disabled={approvalMutation.isPending}
+            onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: false }); }}>
+            Revoke launcher
+          </button>
+        )}
+        </div>
       ),
     },
   ];
@@ -166,6 +191,7 @@ const DevicesPage: React.FC = () => {
       />
 
       {/* Table */}
+      {approvalMutation.isError && <p role="alert" className="text-sm text-red-700">Launcher approval change failed. Refresh and retry.</p>}
       <DataTable
         columns={columns}
         data={data?.data || []}

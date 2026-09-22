@@ -4,7 +4,8 @@ import { logAuditEvent } from '@/middleware/audit';
 import { Request } from 'express';
 import type { PaginationInput } from '@/validation/common';
 import { updateWithVersion } from '@/lib/concurrency';
-import { sanitizeOptionalText, sanitizeUrl, isCleanText } from '@/lib/sanitize';
+import { sanitizeOptionalText, isCleanText } from '@/lib/sanitize';
+import { validatePlatformProfileUrl } from '@/lib/platform-url';
 import { encryptCredential } from '@/lib/crypto/encryption';
 
 /**
@@ -114,7 +115,7 @@ export class PlatformAccountsService {
 
     // REPAIR D-018 — defence in depth: re-validate the URL in the service layer
     // (never rely on the transport schema alone).
-    const profileUrl = normalizeProfileUrl(data.profileUrl);
+    const profileUrl = normalizeProfileUrl(data.profileUrl, platform.slug);
 
     // REPAIR D-017 — never persist markup, even if the schema was bypassed.
     assertCleanFields(data);
@@ -185,7 +186,7 @@ export class PlatformAccountsService {
   }
 
   async update(id: string, data: Record<string, any>, req: Request) {
-    const acct = await prisma.platformAccount.findUnique({ where: { id } });
+    const acct = await prisma.platformAccount.findUnique({ where: { id }, include: { platform: true } });
     if (!acct) {
       throw new NotFoundError(ErrorCode.ACCOUNT_NOT_FOUND, 'Platform account not found');
     }
@@ -196,7 +197,7 @@ export class PlatformAccountsService {
     const { version: expectedVersion, ...fields } = data;
 
     // REPAIR D-018 — service-layer URL validation.
-    const profileUrl = normalizeProfileUrl(fields.profileUrl, true);
+    const profileUrl = normalizeProfileUrl(fields.profileUrl, acct.platform.slug, true);
 
     // REPAIR D-017 — reject markup that bypassed the schema.
     assertCleanFields(fields);
@@ -338,11 +339,11 @@ export class PlatformAccountsService {
  * @param keepUndefined — when true, `undefined` stays `undefined` (PATCH
  *        semantics: "field not supplied"); otherwise `undefined` maps to `null`.
  */
-function normalizeProfileUrl(value: unknown, keepUndefined = false): string | null | undefined {
+function normalizeProfileUrl(value: unknown, slug: string, keepUndefined = false): string | null | undefined {
   if (value === undefined) return keepUndefined ? undefined : null;
   if (value === null || value === '') return null;
   try {
-    return sanitizeUrl(value) ?? null;
+    return validatePlatformProfileUrl(String(value), slug);
   } catch (err: any) {
     throw new AppError(ErrorCode.VALIDATION_ERROR, err?.message ?? 'Invalid profileUrl');
   }

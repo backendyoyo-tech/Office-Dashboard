@@ -94,6 +94,9 @@ model AppUser {
   auditEvents        AuditLog[]              @relation("AuditActor")
   createdDevices     RegisteredDevice[]      @relation("DeviceCreatedBy")
   createdWaSessions  WhatsappSession[]       @relation("WaSessionCreatedBy")
+  confirmedPlatformSessions DevicePlatformSession[] @relation("PlatformSessionConfirmedBy")
+  confirmedWhatsappDevices  WhatsappDeviceSession[] @relation("WhatsappDeviceConfirmedBy")
+  launchGrants              LaunchGrant[]
 
   @@map("app_users")
 }
@@ -120,6 +123,7 @@ model PhoneNumber {
   updater        AppUser              @relation("PhoneUpdatedBy", fields: [updatedBy], references: [id])
   accountLinks   PhoneAccountLink[]
   whatsappSession WhatsappSession?
+  launchGrants    LaunchGrant[]
 
   @@index([status], map: "idx_phone_numbers_status")
   @@map("phone_numbers")
@@ -162,6 +166,8 @@ model PlatformAccount {
   accountLinks    PhoneAccountLink[]
   credential      AccountCredential?
   recoveryMethods AccountRecoveryMethod[]
+  deviceSessions  DevicePlatformSession[]
+  launchGrants    LaunchGrant[]
 
   @@index([platformId, accountStatus], map: "idx_platform_accounts_platform_status")
   @@index([loginIdentifier], map: "idx_platform_accounts_login_identifier")
@@ -262,6 +268,34 @@ enum DeviceStatus {
    @@map("device_status")
 }
 
+enum DeviceApprovalState {
+  PENDING
+  APPROVED
+  REVOKED
+
+  @@map("device_approval_state")
+}
+
+enum AccountSessionState {
+  SETUP_REQUIRED
+  SETUP_IN_PROGRESS
+  USER_CONFIRMED
+  RELOGIN_REQUIRED
+  DISABLED
+  ERROR
+  UNKNOWN
+
+  @@map("account_session_state")
+}
+
+enum LaunchOperation {
+  SETUP
+  OPEN
+  RECONNECT
+
+  @@map("launch_operation")
+}
+
 enum WhatsAppSessionStatus {
   SETUP_REQUIRED
   LINKING
@@ -284,6 +318,8 @@ model RegisteredDevice {
   launcherApiKeyHash String?      @map("launcher_api_key_hash")
   lastSeenAt         DateTime?    @map("last_seen_at") @db.Timestamptz()
   enabled            Boolean      @default(true)
+  approvalState      DeviceApprovalState @default(PENDING) @map("approval_state")
+  supportsPlatformLauncher Boolean @default(false) @map("supports_platform_launcher")
   // Repair D-006 — optimistic locking
   version            Int          @default(1)
   createdBy          String       @map("created_by") @db.Uuid
@@ -294,6 +330,10 @@ model RegisteredDevice {
   creator        AppUser           @relation("DeviceCreatedBy", fields: [createdBy], references: [id])
   whatsappSessions WhatsappSession[]
   waAuditLogs    WhatsappAuditLog[]
+  platformSessions DevicePlatformSession[]
+  whatsappDeviceSessions WhatsappDeviceSession[]
+  launchGrants LaunchGrant[]
+  launchTickets LaunchTicket[]
 
   // Repair D-026 — fast stale-device sweeps
   @@index([status, lastSeenAt], map: "idx_registered_devices_status_last_seen")
@@ -322,6 +362,8 @@ model WhatsappSession {
   device      RegisteredDevice  @relation(fields: [deviceId], references: [id])
   creator     AppUser           @relation("WaSessionCreatedBy", fields: [createdBy], references: [id])
   auditLogs   WhatsappAuditLog[]
+  deviceSessions WhatsappDeviceSession[]
+  launchGrants LaunchGrant[]
 
   @@index([status], map: "idx_whatsapp_sessions_status")
   @@index([deviceId], map: "idx_whatsapp_sessions_device")
@@ -345,4 +387,111 @@ model WhatsappAuditLog {
   @@index([createdAt], map: "idx_wa_audit_logs_created_at")
   @@index([action], map: "idx_wa_audit_logs_action")
   @@map("whatsapp_audit_logs")
+}
+
+// Secure launcher extension. All profile keys are opaque references; no browser
+// cookie or credential material is stored in these tables.
+model DevicePlatformSession {
+  id                    String              @id @default(uuid()) @db.Uuid
+  deviceId              String              @map("device_id") @db.Uuid
+  platformAccountId     String              @map("platform_account_id") @db.Uuid
+  profileKey            String              @map("profile_key") @db.VarChar(64)
+  state                 AccountSessionState @default(SETUP_REQUIRED)
+  confirmedIdentifier   String?             @map("confirmed_identifier") @db.VarChar(160)
+  confirmedByUserId     String?             @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt           DateTime?           @map("confirmed_at") @db.Timestamptz()
+  lastLaunchRequestedAt DateTime?           @map("last_launch_requested_at") @db.Timestamptz()
+  lastLaunchResult      String?             @map("last_launch_result") @db.VarChar(32)
+  version               Int                 @default(1)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+  disabledAt            DateTime?           @map("disabled_at") @db.Timestamptz()
+
+  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  platformAccount PlatformAccount  @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
+  confirmer       AppUser?         @relation("PlatformSessionConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  tickets         LaunchTicket[]
+
+  @@unique([deviceId, platformAccountId], map: "uq_device_platform_account")
+  @@unique([deviceId, profileKey], map: "uq_device_platform_profile_key")
+  @@index([state], map: "idx_device_platform_session_state")
+  @@map("device_platform_sessions")
+}
+
+model WhatsappDeviceSession {
+  id                String              @id @default(uuid()) @db.Uuid
+  whatsappSessionId String              @map("whatsapp_session_id") @db.Uuid
+  deviceId          String              @map("device_id") @db.Uuid
+  profileKey        String              @map("profile_key") @db.VarChar(64)
+  legacyPrimary     Boolean             @default(false) @map("legacy_primary")
+  state             AccountSessionState @default(SETUP_REQUIRED)
+  confirmedByUserId String?             @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt       DateTime?           @map("confirmed_at") @db.Timestamptz()
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+  disabledAt        DateTime?           @map("disabled_at") @db.Timestamptz()
+
+  whatsappSession WhatsappSession @relation(fields: [whatsappSessionId], references: [id], onDelete: Restrict)
+  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  confirmer       AppUser?         @relation("WhatsappDeviceConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  tickets         LaunchTicket[]
+
+  @@unique([whatsappSessionId, deviceId], map: "uq_whatsapp_session_device")
+  @@unique([deviceId, profileKey], map: "uq_whatsapp_device_profile_key")
+  @@map("whatsapp_device_sessions")
+}
+
+model LaunchGrant {
+  id                String          @id @default(uuid()) @db.Uuid
+  secretHash        String          @unique @map("secret_hash") @db.VarChar(64)
+  actorUserId       String          @map("actor_user_id") @db.Uuid
+  authSessionHash   String          @map("auth_session_hash") @db.VarChar(64)
+  userVersion       Int             @map("user_version")
+  deviceId          String          @map("device_id") @db.Uuid
+  phoneNumberId     String          @map("phone_number_id") @db.Uuid
+  platformAccountId String?         @map("platform_account_id") @db.Uuid
+  whatsappSessionId String?         @map("whatsapp_session_id") @db.Uuid
+  operation         LaunchOperation
+  expiresAt         DateTime        @map("expires_at") @db.Timestamptz()
+  consumedAt        DateTime?       @map("consumed_at") @db.Timestamptz()
+  revokedAt         DateTime?       @map("revoked_at") @db.Timestamptz()
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  actorUser       AppUser          @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  phoneNumber     PhoneNumber      @relation(fields: [phoneNumberId], references: [id], onDelete: Restrict)
+  platformAccount PlatformAccount? @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
+  whatsappSession WhatsappSession? @relation(fields: [whatsappSessionId], references: [id], onDelete: Restrict)
+  tickets         LaunchTicket[]
+
+  @@index([actorUserId, expiresAt], map: "idx_launch_grant_actor_expiry")
+  @@index([deviceId, expiresAt], map: "idx_launch_grant_device_expiry")
+  @@map("launch_grants")
+}
+
+model LaunchTicket {
+  id                      String          @id @default(uuid()) @db.Uuid
+  nonceHash               String          @unique @map("nonce_hash") @db.VarChar(64)
+  grantId                 String          @map("grant_id") @db.Uuid
+  deviceId                String          @map("device_id") @db.Uuid
+  devicePlatformSessionId String?         @map("device_platform_session_id") @db.Uuid
+  whatsappDeviceSessionId String?         @map("whatsapp_device_session_id") @db.Uuid
+  operation               LaunchOperation
+  mappingVersion          Int             @map("mapping_version")
+  expiresAt               DateTime        @map("expires_at") @db.Timestamptz()
+  usedAt                  DateTime?       @map("used_at") @db.Timestamptz()
+  ackAt                   DateTime?       @map("ack_at") @db.Timestamptz()
+  launchResult            String?         @map("launch_result") @db.VarChar(16)
+  errorCode               String?         @map("error_code") @db.VarChar(64)
+  revokedAt               DateTime?       @map("revoked_at") @db.Timestamptz()
+  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  grant                   LaunchGrant            @relation(fields: [grantId], references: [id], onDelete: Restrict)
+  device                  RegisteredDevice      @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  devicePlatformSession   DevicePlatformSession? @relation(fields: [devicePlatformSessionId], references: [id], onDelete: Restrict)
+  whatsappDeviceSession   WhatsappDeviceSession? @relation(fields: [whatsappDeviceSessionId], references: [id], onDelete: Restrict)
+
+  @@index([deviceId, expiresAt], map: "idx_launch_ticket_device_expiry")
+  @@map("launch_tickets")
 }

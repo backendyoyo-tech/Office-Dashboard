@@ -12,6 +12,7 @@ import auditRoutes from '@/modules/audit/audit.routes';
 import devicesRoutes from '@/modules/devices/devices.routes';
 import whatsappRoutes from '@/modules/whatsapp/whatsapp.routes';
 import launcherRoutes from '@/modules/launcher/launcher.routes';
+import secureLauncherRoutes from '@/modules/secure-launcher/secure-launcher.routes';
 
 const router = Router();
 
@@ -59,5 +60,6 @@ router.use('/devices', devicesRoutes);
 
 // Launcher API (Phase 2)
 router.use('/launcher', launcherRoutes);
+router.use('/launch', secureLauncherRoutes);
 
 export default router;

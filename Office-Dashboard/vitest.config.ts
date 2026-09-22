@@ -15,8 +15,9 @@ export default defineConfig({
     testTimeout: 30000,
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: 'dotenv/config', replacement: path.resolve(__dirname, 'node_modules/dotenv/config.js') },
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+    ],
   },
 });

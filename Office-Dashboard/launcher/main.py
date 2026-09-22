@@ -1,4 +1,4 @@
-"""
+﻿"""
 Main launcher application for Hair Rap.
 Manages isolated WhatsApp Web browser sessions.
 """
@@ -15,6 +15,7 @@ from pathlib import Path
 from config import load_config, save_config, update_config_value
 from security import validate_launch_request, validate_session_directory
 from browser import find_browser, launch_whatsapp_session
+from platforms import launch_platform_profile
 from api_client import DashboardClient
 from server import LocalCommandServer
 
@@ -122,6 +123,7 @@ class HairRapLauncher:
                 self.config['api_key'] = api_key
                 update_config_value('api_key', api_key)
                 self.client.api_key = api_key
+                self.client.session.headers['Authorization'] = f'Bearer {api_key}'
                 logger.info("API key received and saved")
             
             return True
@@ -140,11 +142,14 @@ class HairRapLauncher:
             self.server = LocalCommandServer(
                 api_key=self.config['api_key'],
                 port=self.config['local_server_port'],
+                device_id=self.config['device_id'],
+                allowed_origins=tuple(self.config.get('dashboard_origins', [])),
             )
             
             # Set callbacks
             self.server.set_launch_callback(self.handle_launch_command)
             self.server.set_health_callback(self.handle_health_check)
+            self.server.set_platform_callback(self.handle_platform_command)
             
             # Start server
             port = self.server.start()
@@ -152,10 +157,6 @@ class HairRapLauncher:
             # Update config with actual port
             self.config['local_server_port'] = port
             update_config_value('local_server_port', port)
-            
-            # Report port to dashboard
-            if self.config['device_id']:
-                self.client.report_local_port(port)
             
             logger.info(f"Local server started on port {port}")
             return True
@@ -209,6 +210,7 @@ class HairRapLauncher:
         result = self.client.heartbeat()
         if result.get('success'):
             logger.debug("Heartbeat sent successfully")
+            self.client.report_platform_capability()
         else:
             logger.warning(f"Heartbeat failed: {result.get('error')}")
     
@@ -259,11 +261,11 @@ class HairRapLauncher:
             self.client.confirm_whatsapp_launch(session_id, False, error_msg)
             self.client.report_status(session_id, 'error', error_msg)
             return {"success": False, "error": error_msg}
-        
+
         # Launch browser
         target_url = request_data.get('target_url', 'https://web.whatsapp.com/')
         success = launch_whatsapp_session(session_dir, self.browser_path, target_url)
-        
+
         if success:
             logger.info(f"WhatsApp session launched: {session_code}")
             self.client.confirm_whatsapp_launch(session_id, True)
@@ -275,7 +277,36 @@ class HairRapLauncher:
             self.client.confirm_whatsapp_launch(session_id, False, error_msg)
             self.client.report_status(session_id, 'error', error_msg)
             return {"success": False, "error": error_msg}
-    
+
+    def handle_platform_command(self, ticket: str) -> dict:
+        """Consume the signed ticket server-side before touching a local profile."""
+        try:
+            command = self.client.consume_platform_ticket(ticket)
+        except Exception:
+            logger.warning('Platform ticket rejected or backend unavailable')
+            return {"success": False, "errorCode": "TICKET_REJECTED"}
+        operation_id = command.get('operationId')
+        try:
+            launch_platform_profile(command['profileKey'], command['targetUrl'], self.browser_path)
+        except FileNotFoundError:
+            error_code = 'BROWSER_MISSING'
+        except ValueError:
+            error_code = 'PROFILE_ERROR'
+        except Exception:
+            error_code = 'LAUNCH_ERROR'
+        else:
+            try:
+                self.client.acknowledge_platform_launch(operation_id, True)
+            except Exception:
+                logger.warning('Browser opened but backend acknowledgement failed')
+                return {"success": False, "errorCode": "ACK_FAILED", "operationId": operation_id}
+            return {"success": True, "state": "BROWSER_LAUNCHED", "operationId": operation_id}
+        try:
+            self.client.acknowledge_platform_launch(operation_id, False, error_code)
+        except Exception:
+            logger.warning('Launch failure acknowledgement failed')
+        return {"success": False, "errorCode": error_code, "operationId": operation_id}
+
     def handle_health_check(self) -> dict:
         """
         Handle health check request.

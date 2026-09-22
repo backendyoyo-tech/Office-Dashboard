@@ -115,10 +115,23 @@ export async function countCompleteNumbers(): Promise<number> {
   return complete;
 }
 
+/** Compute both dashboard metrics from one bounded projection query. */
+export async function countCompletenessNumbers(): Promise<{ complete: number; incomplete: number }> {
+  const rows = await fetchLinkedPhoneProjections();
+  let complete = 0;
+  let incomplete = 0;
+  for (const accounts of rows) {
+    const { state } = evaluatePhoneCompleteness(accounts);
+    if (state === 'COMPLETE') complete += 1;
+    if (state === 'PARTIAL') incomplete += 1;
+  }
+  return { complete, incomplete };
+}
+
 /** Count phone numbers with zero linked accounts (EMPTY / onboarding). */
 export async function countEmptyNumbers(): Promise<number> {
   return prisma.phoneNumber.count({
-    where: { status: 'ACTIVE', accountLinks: { none: {} } },
+    where: { status: 'ACTIVE', archivedAt: null, accountLinks: { none: {} } },
   });
 }
 
@@ -126,6 +139,7 @@ async function fetchLinkedPhoneProjections(): Promise<CompletenessAccountInput[]
   const rows = await prisma.phoneNumber.findMany({
     where: {
       status: 'ACTIVE',
+      archivedAt: null,
       accountLinks: { some: {} },
     },
     select: {

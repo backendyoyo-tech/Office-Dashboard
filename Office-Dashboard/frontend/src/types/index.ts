@@ -173,6 +173,7 @@ export interface AuditLog {
 
 export interface RegisteredDevice {
   version: number;
+  approvalState?: 'PENDING' | 'APPROVED' | 'REVOKED';
   id: string;
   deviceCode: string;
   friendlyName: string;

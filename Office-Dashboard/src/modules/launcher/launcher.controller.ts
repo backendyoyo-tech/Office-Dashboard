@@ -3,6 +3,8 @@ import { launcherService } from './launcher.service';
 import { whatsappService } from '@/modules/whatsapp/whatsapp.service';
 import { AppError, ErrorCode } from '@/types/errors';
 import { z } from 'zod';
+import prisma from '@/lib/db/prisma';
+import { launchTicketService } from '@/modules/secure-launcher/ticket.service';
 
 const registerSchema = z.object({
   deviceCode: z.string().min(1).max(20).regex(/^[A-Za-z0-9_-]+$/),
@@ -29,6 +31,59 @@ const statusSchema = z.object({
 });
 
 export class LauncherController {
+  async platformCapability(req: Request, res: Response, next: NextFunction) {
+    try {
+      const device = (req as any).launcherDevice;
+      const { launcherVersion } = z.object({ launcherVersion: z.string().regex(/^2\.[0-9]+\.[0-9]+$/) }).parse(req.body);
+      const updated = await prisma.registeredDevice.updateMany({
+        where: { id: device.id, enabled: true, approvalState: 'APPROVED' },
+        data: { supportsPlatformLauncher: true, launcherVersion },
+      });
+      if (updated.count !== 1) throw new AppError(ErrorCode.FORBIDDEN, 'Device requires administrator approval');
+      res.json({ approved: true, supportsPlatformLauncher: true });
+    } catch (err) { next(err); }
+  }
+
+  async platformConsume(req: Request, res: Response, next: NextFunction) {
+    try {
+      const device = (req as any).launcherDevice;
+      const { ticket } = z.object({ ticket: z.string().min(32).max(4096) }).parse(req.body);
+      const result = await launchTicketService.consumePlatform(ticket, device.id);
+      await prisma.auditLog.create({ data: {
+        actorUserId: null, action: 'LAUNCH_TICKET_CONSUMED', entityType: 'DEVICE', entityId: device.id,
+        metadata: { operationId: result.operationId },
+      } });
+      res.json(result);
+    } catch (err) { next(err); }
+  }
+
+  async platformAck(req: Request, res: Response, next: NextFunction) {
+    try {
+      const device = (req as any).launcherDevice;
+      const data = z.object({
+        operationId: z.string().uuid(), result: z.enum(['DELIVERED', 'FAILED']),
+        errorCode: z.enum(['BROWSER_MISSING', 'PROFILE_ERROR', 'LAUNCH_ERROR']).optional(),
+      }).parse(req.body);
+      const changed = await prisma.launchTicket.updateMany({
+        where: { id: data.operationId, deviceId: device.id, usedAt: { not: null }, ackAt: null },
+        data: { ackAt: new Date(), launchResult: data.result, errorCode: data.result === 'FAILED' ? data.errorCode ?? 'LAUNCH_ERROR' : null },
+      });
+      if (changed.count !== 1) throw new AppError(ErrorCode.CONCURRENCY_CONFLICT, 'Operation already acknowledged or not consumed');
+      const ticket = await prisma.launchTicket.findUniqueOrThrow({ where: { id: data.operationId }, include: { grant: true } });
+      if (ticket.devicePlatformSessionId) {
+        await prisma.devicePlatformSession.update({
+          where: { id: ticket.devicePlatformSessionId }, data: { lastLaunchResult: data.result },
+        });
+      }
+      await prisma.auditLog.create({ data: {
+        actorUserId: ticket.grant.actorUserId,
+        action: data.result === 'DELIVERED' ? 'LAUNCH_DELIVERED' : 'LAUNCH_FAILED',
+        entityType: 'PLATFORM_ACCOUNT', entityId: ticket.grant.platformAccountId,
+        metadata: { deviceId: device.id, operationId: ticket.id, errorCode: data.errorCode ?? null },
+      } });
+      res.json({ operationId: ticket.id, state: data.result === 'DELIVERED' ? 'BROWSER_LAUNCHED' : 'LAUNCH_FAILED' });
+    } catch (err) { next(err); }
+  }
   /**
    * Register/claim a device from the launcher.
    * Public endpoint - the API key is generated and returned.
