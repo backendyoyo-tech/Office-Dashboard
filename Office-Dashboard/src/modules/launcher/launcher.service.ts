@@ -242,6 +242,7 @@ export class LauncherService {
 
     return {
       status: 'ok',
+      deviceId: updated.id,
       deviceCode: updated.deviceCode,
       serverTime: new Date().toISOString(),
     };

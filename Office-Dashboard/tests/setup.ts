@@ -17,10 +17,14 @@ let prisma: PrismaClient;
  */
 export function getTestPrisma(): PrismaClient {
   if (!prisma) {
+    const testUrl = new URL(process.env.TEST_DATABASE_URL ?? '');
+    if (!/^sl_test_[a-z0-9_]+$/.test(testUrl.searchParams.get('schema') ?? '')) {
+      throw new Error('Database test helpers require TEST_DATABASE_URL with an isolated sl_test_ schema');
+    }
     prisma = new PrismaClient({
       datasources: {
         db: {
-          url: process.env.DATABASE_URL,
+          url: testUrl.href,
         },
       },
     });
@@ -34,8 +38,12 @@ export function getTestPrisma(): PrismaClient {
  */
 export async function cleanDatabase(): Promise<void> {
   const db = getTestPrisma();
-  
+
   // Delete in reverse dependency order
+  await db.launchTicket.deleteMany();
+  await db.launchGrant.deleteMany();
+  await db.devicePlatformSession.deleteMany();
+  await db.whatsappSession.deleteMany();
   await db.whatsappAuditLog.deleteMany();
   await db.whatsappSession.deleteMany();
   await db.registeredDevice.deleteMany();

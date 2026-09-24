@@ -161,19 +161,23 @@ async function main() {
     const acctHandle = `qa_acct_${platform.slug}`;
     const loginId = `qa_${platform.slug}_recover@example.test`;
 
-    const account = await prisma.platformAccount.upsert({
+    const existingAccount = await prisma.platformAccount.findFirst({
       where: { loginIdentifier: loginId },
-      update: {},
-      create: {
-        platformId: platform.id,
-        displayName: `${platform.displayName} QA Account`,
-        accountHandle: acctHandle,
-        loginIdentifier: loginId,
-        accountStatus: 'ACTIVE',
-        createdBy: admin.id,
-        updatedBy: admin.id,
-      },
     });
+
+    const account =
+      existingAccount ??
+      (await prisma.platformAccount.create({
+        data: {
+          platformId: platform.id,
+          displayName: `${platform.displayName} QA Account`,
+          accountHandle: acctHandle,
+          loginIdentifier: loginId,
+          accountStatus: 'ACTIVE',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        },
+      }));
 
     // Persist an encrypted credential so the account is COMPLETE and the reveal
     // path is immediately usable (D-002/D-003 alignment).

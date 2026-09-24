@@ -124,37 +124,42 @@ const DevicesPage: React.FC = () => {
       header: 'Actions',
       render: (item) => (
         <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleMutation.mutate({
-              id: item.id,
-              enabled: !item.enabled,
-              version: item.version,
-            });
-          }}
-          className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium ${
-            item.enabled
-              ? 'bg-green-100 text-green-700 hover:bg-green-200'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          {item.enabled ? 'Enabled' : 'Disabled'}
-        </button>
-        {hasRole(UserRole.ADMIN) && item.approvalState !== 'APPROVED' && item.approvalState !== 'REVOKED' && (
-          <button className="rounded-md bg-blue-100 px-2.5 py-1.5 text-xs font-medium text-blue-700 disabled:opacity-50"
-            disabled={approvalMutation.isPending}
-            onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: true }); }}>
-            Approve launcher
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('DEVICE TOGGLE:', {
+                id: item.id,
+                enabled: !item.enabled,
+                version: item.version,
+              });
+
+              toggleMutation.mutate({
+                id: item.id,
+                enabled: !item.enabled,
+                version: item.version,
+              });
+            }}
+            className={`inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium ${item.enabled
+                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+          >
+            {item.enabled ? 'Enabled' : 'Disabled'}
           </button>
-        )}
-        {hasRole(UserRole.ADMIN) && item.approvalState === 'APPROVED' && (
-          <button className="rounded-md bg-red-100 px-2.5 py-1.5 text-xs font-medium text-red-700 disabled:opacity-50"
-            disabled={approvalMutation.isPending}
-            onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: false }); }}>
-            Revoke launcher
-          </button>
-        )}
+          {hasRole(UserRole.ADMIN) && item.approvalState !== 'APPROVED' && item.approvalState !== 'REVOKED' && (
+            <button className="rounded-md bg-blue-100 px-2.5 py-1.5 text-xs font-medium text-blue-700 disabled:opacity-50"
+              disabled={approvalMutation.isPending}
+              onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: true }); }}>
+              Approve launcher
+            </button>
+          )}
+          {hasRole(UserRole.ADMIN) && item.approvalState === 'APPROVED' && (
+            <button className="rounded-md bg-red-100 px-2.5 py-1.5 text-xs font-medium text-red-700 disabled:opacity-50"
+              disabled={approvalMutation.isPending}
+              onClick={(e) => { e.stopPropagation(); approvalMutation.mutate({ id: item.id, version: item.version, approve: false }); }}>
+              Revoke launcher
+            </button>
+          )}
         </div>
       ),
     },

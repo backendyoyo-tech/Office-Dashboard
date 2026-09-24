@@ -1,6 +1,3 @@
-// Hair Rap by YOYO — Prisma Schema
-// Phase 1 + Phase 2 (WhatsApp Session Management)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,28 +7,327 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================
-// PHASE 1 TABLES
-// ============================================================
+model AppUser {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  fullName              String                  @map("full_name") @db.VarChar(120)
+  email                 String                  @unique @db.Citext
+  passwordHash          String?                 @map("password_hash")
+  role                  UserRole                @default(VIEWER)
+  status                UserStatus              @default(ACTIVE)
+  lastLoginAt           DateTime?               @map("last_login_at") @db.Timestamptz(6)
+  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version               Int                     @default(1)
+  failedLoginAttempts   Int                     @default(0) @map("failed_login_attempts")
+  lockedUntil           DateTime?               @map("locked_until") @db.Timestamptz(6)
+  refreshTokenHash      String?                 @map("refresh_token_hash")
+  refreshTokenExpiresAt DateTime?               @map("refresh_token_expires_at") @db.Timestamptz(6)
+  secretUpdates         AccountCredential[]     @relation("SecretUpdatedBy")
+  createdRecovery       AccountRecoveryMethod[] @relation("RecoveryCreatedBy")
+  auditEvents           AuditLog[]              @relation("AuditActor")
+  linkedAccounts        PhoneAccountLink[]      @relation("LinkedBy")
+  createdPhones         PhoneNumber[]           @relation("PhoneCreatedBy")
+  updatedPhones         PhoneNumber[]           @relation("PhoneUpdatedBy")
+  createdAccounts       PlatformAccount[]       @relation("AccountCreatedBy")
+  updatedAccounts       PlatformAccount[]       @relation("AccountUpdatedBy")
+  createdDevices        RegisteredDevice[]      @relation("DeviceCreatedBy")
+  whatsapp_audit_logs   WhatsappAuditLog[]
+  createdWaSessions     WhatsappSession[]       @relation("WaSessionCreatedBy")
+
+  @@map("app_users")
+}
+
+model PhoneNumber {
+  id              String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  e164Number      String             @unique @map("e164_number") @db.VarChar(20)
+  countryCode     String             @map("country_code") @db.VarChar(5)
+  nationalNumber  String             @map("national_number") @db.VarChar(20)
+  simProvider     String?            @map("sim_provider") @db.VarChar(80)
+  label           String?            @db.VarChar(120)
+  status          PhoneStatus        @default(ACTIVE)
+  notes           String?
+  createdBy       String             @map("created_by") @db.Uuid
+  updatedBy       String             @map("updated_by") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
+  version         Int                @default(1)
+  accountLinks    PhoneAccountLink[]
+  creator         AppUser            @relation("PhoneCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updater         AppUser            @relation("PhoneUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  whatsappSession WhatsappSession?
+
+  @@index([status], map: "idx_phone_numbers_status")
+  @@map("phone_numbers")
+}
+
+model Platform {
+  id          Int               @id @default(autoincrement())
+  slug        String            @unique @db.VarChar(40)
+  displayName String            @map("display_name") @db.VarChar(80)
+  iconKey     String?           @map("icon_key") @db.VarChar(80)
+  isActive    Boolean           @default(true) @map("is_active")
+  accounts    PlatformAccount[]
+
+  @@map("platforms")
+}
+
+model PlatformAccount {
+  id                     String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  platformId             Int                     @map("platform_id")
+  displayName            String?                 @map("display_name") @db.VarChar(160)
+  accountHandle          String?                 @map("account_handle") @db.VarChar(160)
+  loginIdentifier        String?                 @map("login_identifier") @db.Citext
+  profileUrl             String?                 @map("profile_url")
+  externalAccountId      String?                 @map("external_account_id") @db.VarChar(160)
+  accountStatus          AccountStatus           @default(UNKNOWN) @map("account_status")
+  notes                  String?
+  createdBy              String                  @map("created_by") @db.Uuid
+  updatedBy              String                  @map("updated_by") @db.Uuid
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt             DateTime?               @map("archived_at") @db.Timestamptz(6)
+  version                Int                     @default(1)
+  credential             AccountCredential?
+  recoveryMethods        AccountRecoveryMethod[]
+  accountLinks           PhoneAccountLink[]
+  devicePlatformSessions DevicePlatformSession[]
+  creator                AppUser                 @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  platform               Platform                @relation(fields: [platformId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updater                AppUser                 @relation("AccountUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([platformId, accountStatus], map: "idx_platform_accounts_platform_status")
+  @@index([loginIdentifier], map: "idx_platform_accounts_login_identifier")
+  @@map("platform_accounts")
+}
+
+model PhoneAccountLink {
+  id                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phoneNumberId     String           @map("phone_number_id") @db.Uuid
+  platformAccountId String           @map("platform_account_id") @db.Uuid
+  relationshipType  RelationshipType @default(GENERAL) @map("relationship_type")
+  isPrimary         Boolean          @default(false) @map("is_primary")
+  linkedBy          String           @map("linked_by") @db.Uuid
+  linkedAt          DateTime         @default(now()) @map("linked_at") @db.Timestamptz(6)
+  linker            AppUser          @relation("LinkedBy", fields: [linkedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  phoneNumber       PhoneNumber      @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  platformAccount   PlatformAccount  @relation(fields: [platformAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([phoneNumberId, platformAccountId, relationshipType])
+  @@index([platformAccountId], map: "idx_phone_account_links_account")
+  @@index([phoneNumberId], map: "idx_phone_account_links_phone")
+  @@map("phone_account_links")
+}
+
+model AccountCredential {
+  id                 String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  platformAccountId  String          @unique @map("platform_account_id") @db.Uuid
+  passwordCiphertext String          @map("password_ciphertext")
+  nonce              String
+  authTag            String?         @map("auth_tag")
+  keyVersion         Int             @map("key_version")
+  secretUpdatedBy    String          @map("secret_updated_by") @db.Uuid
+  secretUpdatedAt    DateTime        @map("secret_updated_at") @db.Timestamptz(6)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  platformAccount    PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updater            AppUser         @relation("SecretUpdatedBy", fields: [secretUpdatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("account_credentials")
+}
+
+model AccountRecoveryMethod {
+  id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  platformAccountId String             @map("platform_account_id") @db.Uuid
+  methodType        RecoveryMethodType @map("method_type")
+  valueNormalized   String             @map("value_normalized")
+  isPrimary         Boolean            @default(false) @map("is_primary")
+  createdBy         String             @map("created_by") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  creator           AppUser            @relation("RecoveryCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  platformAccount   PlatformAccount    @relation(fields: [platformAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([platformAccountId, methodType])
+  @@index([platformAccountId], map: "idx_recovery_methods_account")
+  @@map("account_recovery_methods")
+}
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type") @db.VarChar(40)
+  entityId    String?  @map("entity_id") @db.Uuid
+  metadata    Json     @default("{}")
+  ipAddress   String?  @map("ip_address") @db.Inet
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor       AppUser? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([createdAt], map: "idx_audit_logs_created_at")
+  @@index([actorUserId, createdAt], map: "idx_audit_logs_actor")
+  @@index([entityType, entityId, createdAt], map: "idx_audit_logs_entity")
+  @@map("audit_logs")
+}
+
+model RegisteredDevice {
+  id                       String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  deviceCode               String                @unique @map("device_code") @db.VarChar(20)
+  friendlyName             String                @map("friendly_name") @db.VarChar(120)
+  hostname                 String?               @db.VarChar(255)
+  status                   DeviceStatus          @default(UNKNOWN)
+  launcherVersion          String?               @map("launcher_version") @db.VarChar(40)
+  launcherApiKeyHash       String?               @map("launcher_api_key_hash")
+  lastSeenAt               DateTime?             @map("last_seen_at") @db.Timestamptz(6)
+  enabled                  Boolean               @default(true)
+  createdBy                String                @map("created_by") @db.Uuid
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version                  Int                   @default(1)
+  approvalState            device_approval_state @default(PENDING) @map("approval_state")
+  supportsPlatformLauncher Boolean               @default(false) @map("supports_platform_launcher")
+  creator                  AppUser               @relation("DeviceCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  waAuditLogs              WhatsappAuditLog[]
+  whatsappSessions         WhatsappSession[]
+
+  @@index([approvalState])
+  @@map("registered_devices")
+}
+
+model WhatsappSession {
+  id               String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionCode      String                @unique @map("session_code") @db.VarChar(20)
+  phoneNumberId    String                @unique @map("phone_number_id") @db.Uuid
+  deviceId         String                @map("device_id") @db.Uuid
+  status           WhatsAppSessionStatus @default(SETUP_REQUIRED)
+  sessionDirectory String                @map("session_directory") @db.VarChar(500)
+  linkedAt         DateTime?             @map("linked_at") @db.Timestamptz(6)
+  lastOpenedAt     DateTime?             @map("last_opened_at") @db.Timestamptz(6)
+  lastError        String?               @map("last_error")
+  createdBy        String                @map("created_by") @db.Uuid
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version          Int                   @default(1)
+  auditLogs        WhatsappAuditLog[]
+  creator          AppUser               @relation("WaSessionCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device           RegisteredDevice      @relation(fields: [deviceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  phoneNumber      PhoneNumber           @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("whatsapp_sessions")
+}
+
+model WhatsappAuditLog {
+  id                String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  whatsappSessionId String?           @map("whatsapp_session_id") @db.Uuid
+  deviceId          String?           @map("device_id") @db.Uuid
+  action            String            @db.VarChar(40)
+  actorUserId       String?           @map("actor_user_id") @db.Uuid
+  metadata          Json              @default("{}")
+  ipAddress         String?           @map("ip_address") @db.Inet
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  version           Int               @default(1)
+  app_users         AppUser?          @relation(fields: [actorUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  device            RegisteredDevice? @relation(fields: [deviceId], references: [id], onUpdate: NoAction)
+  whatsappSession   WhatsappSession?  @relation(fields: [whatsappSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([createdAt], map: "idx_wa_audit_logs_created_at")
+  @@index([action], map: "idx_wa_audit_logs_action")
+  @@map("whatsapp_audit_logs")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model DevicePlatformSession {
+  id                    String                        @id
+  deviceId              String                        @map("device_id")
+  platformAccountId     String                        @map("platform_account_id")
+  profileKey            String                        @unique @map("profile_key") @db.VarChar(32)
+  state                 device_platform_session_state @default(UNKNOWN)
+  version               Int                           @default(1)
+  confirmedAt           DateTime?                     @map("confirmed_at")
+  confirmedByUserId     String?                       @map("confirmed_by_user_id")
+  confirmedIdentifier   String?                       @map("confirmed_identifier") @db.VarChar(160)
+  lastLaunchRequestedAt DateTime?                     @map("last_launch_requested_at")
+  lastLaunchResult      String?                       @map("last_launch_result") @db.VarChar(80)
+  disabledAt            DateTime?                     @map("disabled_at")
+  createdAt             DateTime                      @default(now()) @map("created_at")
+  updatedAt             DateTime                      @default(now()) @map("updated_at")
+  platformAccount       PlatformAccount               @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+  launchTickets         LaunchTicket[]
+
+  @@unique([deviceId, platformAccountId], name: "deviceId_platformAccountId")
+  @@index([deviceId])
+  @@index([platformAccountId])
+  @@index([state])
+  @@map("device_platform_sessions")
+}
+
+model LaunchGrant {
+  id                String           @id
+  secretHash        String           @unique @map("secret_hash") @db.VarChar(128)
+  actorUserId       String           @map("actor_user_id")
+  authSessionHash   String           @map("auth_session_hash") @db.VarChar(128)
+  userVersion       Int              @map("user_version")
+  deviceId          String           @map("device_id")
+  phoneNumberId     String           @map("phone_number_id")
+  platformAccountId String           @map("platform_account_id")
+  operation         launch_operation
+  expiresAt         DateTime         @map("expires_at")
+  consumedAt        DateTime?        @map("consumed_at")
+  revokedAt         DateTime?        @map("revoked_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  tickets LaunchTicket[]
+
+  @@index([actorUserId])
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@index([phoneNumberId])
+  @@index([platformAccountId])
+  @@map("launch_grants")
+}
+
+model LaunchTicket {
+  id                      String           @id
+  nonceHash               String           @unique @map("nonce_hash") @db.VarChar(128)
+  grantId                 String           @map("grant_id")
+  deviceId                String           @map("device_id")
+  devicePlatformSessionId String           @map("device_platform_session_id")
+  operation               launch_operation
+  mappingVersion          Int              @map("mapping_version")
+  expiresAt               DateTime         @map("expires_at")
+  usedAt                  DateTime?        @map("used_at")
+  revokedAt               DateTime?        @map("revoked_at")
+  createdAt               DateTime         @default(now()) @map("created_at")
+
+  grant                 LaunchGrant           @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  devicePlatformSession DevicePlatformSession @relation(fields: [devicePlatformSessionId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([devicePlatformSessionId])
+  @@index([expiresAt])
+  @@index([grantId])
+  @@map("launch_tickets")
+}
 
 enum UserRole {
   ADMIN
   EDITOR
   VIEWER
 
-   @@map("user_role")
+  @@map("user_role")
 }
 
 enum UserStatus {
   ACTIVE
   DISABLED
 
-   @@map("user_status")
+  @@map("user_status")
 }
 
 enum PhoneStatus {
   ACTIVE
   INACTIVE
+  ARCHIVED
 
   @@map("phone_status")
 }
@@ -43,14 +339,14 @@ enum AccountStatus {
   SUSPENDED
   UNKNOWN
 
-   @@map("account_status")
+  @@map("account_status")
 }
 
 enum RecoveryMethodType {
   EMAIL
   PHONE
 
-   @@map("recovery_method_type")
+  @@map("recovery_method_type")
 }
 
 enum RelationshipType {
@@ -58,206 +354,8 @@ enum RelationshipType {
   LOGIN
   RECOVERY
 
-   @@map("relationship_type")
+  @@map("relationship_type")
 }
-
-model AppUser {
-  id           String     @id @default(uuid()) @db.Uuid
-  fullName     String     @map("full_name") @db.VarChar(120)
-  email        String     @unique @db.Citext
-  passwordHash String?    @map("password_hash")
-  role         UserRole   @default(VIEWER)
-  status       UserStatus @default(ACTIVE)
-  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz()
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
-
-  // Repair D-006 — optimistic locking / stale write detection (FR-018)
-  version Int @default(1)
-
-  // Repair SEC-002 — account lockout after repeated failed logins
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz()
-
-  // Repair SEC-003 — refresh-token rotation (hash only, never the raw token)
-  refreshTokenHash      String?   @map("refresh_token_hash")
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz()
-
-  // Relations
-  createdPhones      PhoneNumber[]           @relation("PhoneCreatedBy")
-  updatedPhones      PhoneNumber[]           @relation("PhoneUpdatedBy")
-  createdAccounts    PlatformAccount[]       @relation("AccountCreatedBy")
-  updatedAccounts    PlatformAccount[]       @relation("AccountUpdatedBy")
-  linkedAccounts     PhoneAccountLink[]      @relation("LinkedBy")
-  secretUpdates      AccountCredential[]     @relation("SecretUpdatedBy")
-  createdRecovery    AccountRecoveryMethod[] @relation("RecoveryCreatedBy")
-  auditEvents        AuditLog[]              @relation("AuditActor")
-  createdDevices     RegisteredDevice[]      @relation("DeviceCreatedBy")
-  createdWaSessions  WhatsappSession[]       @relation("WaSessionCreatedBy")
-  confirmedPlatformSessions DevicePlatformSession[] @relation("PlatformSessionConfirmedBy")
-  confirmedWhatsappDevices  WhatsappDeviceSession[] @relation("WhatsappDeviceConfirmedBy")
-  launchGrants              LaunchGrant[]
-
-  @@map("app_users")
-}
-
-model PhoneNumber {
-  id             String      @id @default(uuid()) @db.Uuid
-  e164Number     String      @unique @map("e164_number") @db.VarChar(20)
-  countryCode    String      @map("country_code") @db.VarChar(5)
-  nationalNumber String      @map("national_number") @db.VarChar(20)
-  simProvider    String?     @map("sim_provider") @db.VarChar(80)
-  label          String?     @db.VarChar(120)
-  status         PhoneStatus @default(ACTIVE)
-  notes          String?
-  createdBy      String      @map("created_by") @db.Uuid
-  updatedBy      String      @map("updated_by") @db.Uuid
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
-  // Repair D-006 — optimistic locking / stale write detection (FR-018)
-  version    Int       @default(1)
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz()
-
-  // Relations
-  creator        AppUser              @relation("PhoneCreatedBy", fields: [createdBy], references: [id])
-  updater        AppUser              @relation("PhoneUpdatedBy", fields: [updatedBy], references: [id])
-  accountLinks   PhoneAccountLink[]
-  whatsappSession WhatsappSession?
-  launchGrants    LaunchGrant[]
-
-  @@index([status], map: "idx_phone_numbers_status")
-  @@map("phone_numbers")
-}
-
-model Platform {
-  id          Int     @id @default(autoincrement())
-  slug        String  @unique @db.VarChar(40)
-  displayName String  @map("display_name") @db.VarChar(80)
-  iconKey     String? @map("icon_key") @db.VarChar(80)
-  isActive    Boolean @default(true) @map("is_active")
-
-  accounts PlatformAccount[]
-
-  @@map("platforms")
-}
-
-model PlatformAccount {
-  id                String        @id @default(uuid()) @db.Uuid
-  platformId        Int           @map("platform_id")
-  displayName       String?       @map("display_name") @db.VarChar(160)
-  accountHandle     String?       @map("account_handle") @db.VarChar(160)
-  loginIdentifier   String?       @unique @map("login_identifier") @db.Citext
-  profileUrl        String?       @map("profile_url")
-  externalAccountId String?       @map("external_account_id") @db.VarChar(160)
-  accountStatus     AccountStatus @default(UNKNOWN) @map("account_status")
-  notes             String?
-  createdBy         String        @map("created_by") @db.Uuid
-  updatedBy         String        @map("updated_by") @db.Uuid
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
-  // Repair D-006 — optimistic locking / stale write detection (FR-018)
-  version    Int       @default(1)
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz()
-
-  // Relations
-  platform        Platform               @relation(fields: [platformId], references: [id])
-  creator         AppUser                @relation("AccountCreatedBy", fields: [createdBy], references: [id])
-  updater         AppUser                @relation("AccountUpdatedBy", fields: [updatedBy], references: [id])
-  accountLinks    PhoneAccountLink[]
-  credential      AccountCredential?
-  recoveryMethods AccountRecoveryMethod[]
-  deviceSessions  DevicePlatformSession[]
-  launchGrants    LaunchGrant[]
-
-  @@index([platformId, accountStatus], map: "idx_platform_accounts_platform_status")
-  @@index([loginIdentifier], map: "idx_platform_accounts_login_identifier")
-  @@map("platform_accounts")
-}
-
-model PhoneAccountLink {
-  id                String           @id @default(uuid()) @db.Uuid
-  phoneNumberId     String           @map("phone_number_id") @db.Uuid
-  platformAccountId String           @map("platform_account_id") @db.Uuid
-  relationshipType  RelationshipType @default(GENERAL) @map("relationship_type")
-  isPrimary         Boolean          @default(false) @map("is_primary")
-  linkedBy          String           @map("linked_by") @db.Uuid
-  linkedAt          DateTime         @default(now()) @map("linked_at") @db.Timestamptz()
-
-  // Relations
-  phoneNumber     PhoneNumber     @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
-  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
-  linker          AppUser         @relation("LinkedBy", fields: [linkedBy], references: [id])
-
-  @@unique([phoneNumberId, platformAccountId, relationshipType], map: "uq_phone_account_link")
-  @@index([platformAccountId], map: "idx_phone_account_links_account")
-  @@index([phoneNumberId], map: "idx_phone_account_links_phone")
-  @@map("phone_account_links")
-}
-
-model AccountCredential {
-  id                 String    @id @default(uuid()) @db.Uuid
-  platformAccountId  String    @unique @map("platform_account_id") @db.Uuid
-  passwordCiphertext String    @map("password_ciphertext")
-  nonce              String
-  authTag            String?   @map("auth_tag")
-  keyVersion         Int       @map("key_version")
-  secretUpdatedBy    String    @map("secret_updated_by") @db.Uuid
-  secretUpdatedAt    DateTime  @map("secret_updated_at") @db.Timestamptz()
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  // Repair D-006 — optimistic locking
-  version            Int       @default(1)
-
-  // Relations
-  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
-  updater         AppUser         @relation("SecretUpdatedBy", fields: [secretUpdatedBy], references: [id])
-
-  @@map("account_credentials")
-}
-
-model AccountRecoveryMethod {
-  id                String             @id @default(uuid()) @db.Uuid
-  platformAccountId String             @map("platform_account_id") @db.Uuid
-  methodType        RecoveryMethodType @map("method_type")
-  valueNormalized   String             @map("value_normalized")
-  isPrimary         Boolean            @default(false) @map("is_primary")
-  createdBy         String             @map("created_by") @db.Uuid
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
-  // Repair D-006 — optimistic locking
-  version           Int                @default(1)
-
-  // Relations
-  platformAccount PlatformAccount      @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
-  creator         AppUser              @relation("RecoveryCreatedBy", fields: [createdBy], references: [id])
-
-  @@unique([platformAccountId, methodType], map: "uq_recovery_method_account_type")
-  @@index([platformAccountId], map: "idx_recovery_methods_account")
-  @@map("account_recovery_methods")
-}
-
-model AuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  actorUserId String?  @map("actor_user_id") @db.Uuid
-  action      String
-  entityType  String   @map("entity_type") @db.VarChar(40)
-  entityId    String?  @map("entity_id") @db.Uuid
-  metadata    Json     @default("{}")
-  ipAddress   String?  @map("ip_address") @db.Inet()
-  userAgent   String?  @map("user_agent")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
-
-  // Relations
-  actor AppUser? @relation("AuditActor", fields: [actorUserId], references: [id])
-
-  @@index([createdAt], map: "idx_audit_logs_created_at")
-  @@index([actorUserId, createdAt], map: "idx_audit_logs_actor")
-  @@index([entityType, entityId, createdAt], map: "idx_audit_logs_entity")
-  @@map("audit_logs")
-}
-
-// ============================================================
-// PHASE 2 TABLES — WhatsApp Session Management
-// ============================================================
 
 enum DeviceStatus {
   ONLINE
@@ -265,35 +363,7 @@ enum DeviceStatus {
   UNKNOWN
   DISABLED
 
-   @@map("device_status")
-}
-
-enum DeviceApprovalState {
-  PENDING
-  APPROVED
-  REVOKED
-
-  @@map("device_approval_state")
-}
-
-enum AccountSessionState {
-  SETUP_REQUIRED
-  SETUP_IN_PROGRESS
-  USER_CONFIRMED
-  RELOGIN_REQUIRED
-  DISABLED
-  ERROR
-  UNKNOWN
-
-  @@map("account_session_state")
-}
-
-enum LaunchOperation {
-  SETUP
-  OPEN
-  RECONNECT
-
-  @@map("launch_operation")
+  @@map("device_status")
 }
 
 enum WhatsAppSessionStatus {
@@ -308,190 +378,22 @@ enum WhatsAppSessionStatus {
   @@map("whatsapp_session_status")
 }
 
-model RegisteredDevice {
-  id                 String       @id @default(uuid()) @db.Uuid
-  deviceCode         String       @unique @map("device_code") @db.VarChar(20)
-  friendlyName       String       @map("friendly_name") @db.VarChar(120)
-  hostname           String?      @db.VarChar(255)
-  status             DeviceStatus @default(UNKNOWN)
-  launcherVersion    String?      @map("launcher_version") @db.VarChar(40)
-  launcherApiKeyHash String?      @map("launcher_api_key_hash")
-  lastSeenAt         DateTime?    @map("last_seen_at") @db.Timestamptz()
-  enabled            Boolean      @default(true)
-  approvalState      DeviceApprovalState @default(PENDING) @map("approval_state")
-  supportsPlatformLauncher Boolean @default(false) @map("supports_platform_launcher")
-  // Repair D-006 — optimistic locking
-  version            Int          @default(1)
-  createdBy          String       @map("created_by") @db.Uuid
-  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
-
-  // Relations
-  creator        AppUser           @relation("DeviceCreatedBy", fields: [createdBy], references: [id])
-  whatsappSessions WhatsappSession[]
-  waAuditLogs    WhatsappAuditLog[]
-  platformSessions DevicePlatformSession[]
-  whatsappDeviceSessions WhatsappDeviceSession[]
-  launchGrants LaunchGrant[]
-  launchTickets LaunchTicket[]
-
-  // Repair D-026 — fast stale-device sweeps
-  @@index([status, lastSeenAt], map: "idx_registered_devices_status_last_seen")
-  @@index([enabled], map: "idx_registered_devices_enabled")
-  @@map("registered_devices")
+enum device_approval_state {
+  PENDING
+  APPROVED
+  REVOKED
 }
 
-model WhatsappSession {
-  id               String                @id @default(uuid()) @db.Uuid
-  sessionCode      String                @unique @map("session_code") @db.VarChar(20)
-  phoneNumberId    String                @unique @map("phone_number_id") @db.Uuid
-  deviceId         String                @map("device_id") @db.Uuid
-  status           WhatsAppSessionStatus @default(SETUP_REQUIRED)
-  sessionDirectory String                @map("session_directory") @db.VarChar(500)
-  linkedAt         DateTime?             @map("linked_at") @db.Timestamptz()
-  lastOpenedAt     DateTime?             @map("last_opened_at") @db.Timestamptz()
-  lastError        String?               @map("last_error")
-  // Repair D-006 — optimistic locking
-  version          Int                   @default(1)
-  createdBy        String                @map("created_by") @db.Uuid
-  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz()
-
-  // Relations
-  phoneNumber PhoneNumber       @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
-  device      RegisteredDevice  @relation(fields: [deviceId], references: [id])
-  creator     AppUser           @relation("WaSessionCreatedBy", fields: [createdBy], references: [id])
-  auditLogs   WhatsappAuditLog[]
-  deviceSessions WhatsappDeviceSession[]
-  launchGrants LaunchGrant[]
-
-  @@index([status], map: "idx_whatsapp_sessions_status")
-  @@index([deviceId], map: "idx_whatsapp_sessions_device")
-  @@map("whatsapp_sessions")
+enum device_platform_session_state {
+  SETUP_IN_PROGRESS
+  USER_CONFIRMED    @map("USER_CONFIRMED_ON_DEVICE")
+  UNKNOWN
+  RELOGIN_REQUIRED
+  DISABLED
 }
 
-model WhatsappAuditLog {
-  id                String   @id @default(uuid()) @db.Uuid
-  whatsappSessionId String?  @map("whatsapp_session_id") @db.Uuid
-  deviceId          String?  @map("device_id") @db.Uuid
-  action            String
-  actorUserId       String?  @map("actor_user_id") @db.Uuid
-  metadata          Json     @default("{}")
-  ipAddress         String?  @map("ip_address") @db.Inet()
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
-
-  // Relations
-  whatsappSession WhatsappSession? @relation(fields: [whatsappSessionId], references: [id])
-  device          RegisteredDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-
-  @@index([createdAt], map: "idx_wa_audit_logs_created_at")
-  @@index([action], map: "idx_wa_audit_logs_action")
-  @@map("whatsapp_audit_logs")
-}
-
-// Secure launcher extension. All profile keys are opaque references; no browser
-// cookie or credential material is stored in these tables.
-model DevicePlatformSession {
-  id                    String              @id @default(uuid()) @db.Uuid
-  deviceId              String              @map("device_id") @db.Uuid
-  platformAccountId     String              @map("platform_account_id") @db.Uuid
-  profileKey            String              @map("profile_key") @db.VarChar(64)
-  state                 AccountSessionState @default(SETUP_REQUIRED)
-  confirmedIdentifier   String?             @map("confirmed_identifier") @db.VarChar(160)
-  confirmedByUserId     String?             @map("confirmed_by_user_id") @db.Uuid
-  confirmedAt           DateTime?           @map("confirmed_at") @db.Timestamptz()
-  lastLaunchRequestedAt DateTime?           @map("last_launch_requested_at") @db.Timestamptz()
-  lastLaunchResult      String?             @map("last_launch_result") @db.VarChar(32)
-  version               Int                 @default(1)
-  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
-  disabledAt            DateTime?           @map("disabled_at") @db.Timestamptz()
-
-  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  platformAccount PlatformAccount  @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
-  confirmer       AppUser?         @relation("PlatformSessionConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
-  tickets         LaunchTicket[]
-
-  @@unique([deviceId, platformAccountId], map: "uq_device_platform_account")
-  @@unique([deviceId, profileKey], map: "uq_device_platform_profile_key")
-  @@index([state], map: "idx_device_platform_session_state")
-  @@map("device_platform_sessions")
-}
-
-model WhatsappDeviceSession {
-  id                String              @id @default(uuid()) @db.Uuid
-  whatsappSessionId String              @map("whatsapp_session_id") @db.Uuid
-  deviceId          String              @map("device_id") @db.Uuid
-  profileKey        String              @map("profile_key") @db.VarChar(64)
-  legacyPrimary     Boolean             @default(false) @map("legacy_primary")
-  state             AccountSessionState @default(SETUP_REQUIRED)
-  confirmedByUserId String?             @map("confirmed_by_user_id") @db.Uuid
-  confirmedAt       DateTime?           @map("confirmed_at") @db.Timestamptz()
-  version           Int                 @default(1)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
-  disabledAt        DateTime?           @map("disabled_at") @db.Timestamptz()
-
-  whatsappSession WhatsappSession @relation(fields: [whatsappSessionId], references: [id], onDelete: Restrict)
-  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  confirmer       AppUser?         @relation("WhatsappDeviceConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
-  tickets         LaunchTicket[]
-
-  @@unique([whatsappSessionId, deviceId], map: "uq_whatsapp_session_device")
-  @@unique([deviceId, profileKey], map: "uq_whatsapp_device_profile_key")
-  @@map("whatsapp_device_sessions")
-}
-
-model LaunchGrant {
-  id                String          @id @default(uuid()) @db.Uuid
-  secretHash        String          @unique @map("secret_hash") @db.VarChar(64)
-  actorUserId       String          @map("actor_user_id") @db.Uuid
-  authSessionHash   String          @map("auth_session_hash") @db.VarChar(64)
-  userVersion       Int             @map("user_version")
-  deviceId          String          @map("device_id") @db.Uuid
-  phoneNumberId     String          @map("phone_number_id") @db.Uuid
-  platformAccountId String?         @map("platform_account_id") @db.Uuid
-  whatsappSessionId String?         @map("whatsapp_session_id") @db.Uuid
-  operation         LaunchOperation
-  expiresAt         DateTime        @map("expires_at") @db.Timestamptz()
-  consumedAt        DateTime?       @map("consumed_at") @db.Timestamptz()
-  revokedAt         DateTime?       @map("revoked_at") @db.Timestamptz()
-  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz()
-
-  actorUser       AppUser          @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
-  device          RegisteredDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  phoneNumber     PhoneNumber      @relation(fields: [phoneNumberId], references: [id], onDelete: Restrict)
-  platformAccount PlatformAccount? @relation(fields: [platformAccountId], references: [id], onDelete: Restrict)
-  whatsappSession WhatsappSession? @relation(fields: [whatsappSessionId], references: [id], onDelete: Restrict)
-  tickets         LaunchTicket[]
-
-  @@index([actorUserId, expiresAt], map: "idx_launch_grant_actor_expiry")
-  @@index([deviceId, expiresAt], map: "idx_launch_grant_device_expiry")
-  @@map("launch_grants")
-}
-
-model LaunchTicket {
-  id                      String          @id @default(uuid()) @db.Uuid
-  nonceHash               String          @unique @map("nonce_hash") @db.VarChar(64)
-  grantId                 String          @map("grant_id") @db.Uuid
-  deviceId                String          @map("device_id") @db.Uuid
-  devicePlatformSessionId String?         @map("device_platform_session_id") @db.Uuid
-  whatsappDeviceSessionId String?         @map("whatsapp_device_session_id") @db.Uuid
-  operation               LaunchOperation
-  mappingVersion          Int             @map("mapping_version")
-  expiresAt               DateTime        @map("expires_at") @db.Timestamptz()
-  usedAt                  DateTime?       @map("used_at") @db.Timestamptz()
-  ackAt                   DateTime?       @map("ack_at") @db.Timestamptz()
-  launchResult            String?         @map("launch_result") @db.VarChar(16)
-  errorCode               String?         @map("error_code") @db.VarChar(64)
-  revokedAt               DateTime?       @map("revoked_at") @db.Timestamptz()
-  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz()
-
-  grant                   LaunchGrant            @relation(fields: [grantId], references: [id], onDelete: Restrict)
-  device                  RegisteredDevice      @relation(fields: [deviceId], references: [id], onDelete: Restrict)
-  devicePlatformSession   DevicePlatformSession? @relation(fields: [devicePlatformSessionId], references: [id], onDelete: Restrict)
-  whatsappDeviceSession   WhatsappDeviceSession? @relation(fields: [whatsappDeviceSessionId], references: [id], onDelete: Restrict)
-
-  @@index([deviceId, expiresAt], map: "idx_launch_ticket_device_expiry")
-  @@map("launch_tickets")
+enum launch_operation {
+  SETUP
+  OPEN
+  RECONNECT
 }

@@ -26,9 +26,9 @@ if not exist "%SCRIPT_DIR%main.py" (
 )
 
 REM Check if config exists
-if not exist "%SCRIPT_DIR%launcher_config.json" (
+if not exist "%LOCALAPPDATA%\HairRap\launcher.json" (
     echo WARNING: Configuration file not found.
-    echo Please run setup.bat first.
+    echo Please run configure.py first.
     pause
     exit /b 1
 )

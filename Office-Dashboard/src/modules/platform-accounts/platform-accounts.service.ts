@@ -218,6 +218,10 @@ export class PlatformAccountsService {
         updatedBy: req.user!.id,
       },
       include: { platform: true, credential: true, recoveryMethods: true },
+      ...(profileUrl !== undefined && profileUrl !== acct.profileUrl ? { audit: {
+        actorUserId: req.user!.id, action: 'ACCOUNT_URL_CHANGED', entityType: 'PLATFORM_ACCOUNT',
+        entityId: id, metadata: { previousVersion: acct.version, navigationMetadataOnly: true },
+      } } : {}),
     });
 
     await logAuditEvent({

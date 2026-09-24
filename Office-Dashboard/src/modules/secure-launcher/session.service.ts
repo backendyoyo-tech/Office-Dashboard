@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import prisma from '@/lib/db/prisma';
 import { requireActivePhoneAccountLink } from '@/lib/association';
 import { assertApprovedPlatformDevice } from '@/lib/platform-device';
@@ -17,7 +18,9 @@ export class PlatformSessionService {
     const session = await prisma.devicePlatformSession.upsert({
       where: { deviceId_platformAccountId: { deviceId, platformAccountId } },
       create: {
-        deviceId, platformAccountId,
+        id: randomUUID(),
+        deviceId,
+        platformAccountId,
         profileKey: crypto.randomBytes(16).toString('hex'),
       },
       update: {},

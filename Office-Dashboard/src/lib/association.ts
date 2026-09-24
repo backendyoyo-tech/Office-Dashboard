@@ -1,9 +1,10 @@
 import prisma from '@/lib/db/prisma';
+import type { Prisma } from '@prisma/client';
 import { ErrorCode, NotFoundError } from '@/types/errors';
 
 /** Source of truth for every privileged number/account request. */
-export async function requireActivePhoneAccountLink(phoneNumberId: string, platformAccountId: string) {
-  const link = await prisma.phoneAccountLink.findFirst({
+export async function requireActivePhoneAccountLink(phoneNumberId: string, platformAccountId: string, db: Pick<Prisma.TransactionClient, 'phoneAccountLink'> = prisma) {
+  const link = await db.phoneAccountLink.findFirst({
     where: {
       phoneNumberId,
       platformAccountId,

@@ -49,10 +49,12 @@ export class LauncherController {
       const device = (req as any).launcherDevice;
       const { ticket } = z.object({ ticket: z.string().min(32).max(4096) }).parse(req.body);
       const result = await launchTicketService.consumePlatform(ticket, device.id);
-      await prisma.auditLog.create({ data: {
-        actorUserId: null, action: 'LAUNCH_TICKET_CONSUMED', entityType: 'DEVICE', entityId: device.id,
-        metadata: { operationId: result.operationId },
-      } });
+      await prisma.auditLog.create({
+        data: {
+          actorUserId: null, action: 'LAUNCH_TICKET_CONSUMED', entityType: 'DEVICE', entityId: device.id,
+          metadata: { operationId: result.operationId },
+        }
+      });
       res.json(result);
     } catch (err) { next(err); }
   }
@@ -64,23 +66,84 @@ export class LauncherController {
         operationId: z.string().uuid(), result: z.enum(['DELIVERED', 'FAILED']),
         errorCode: z.enum(['BROWSER_MISSING', 'PROFILE_ERROR', 'LAUNCH_ERROR']).optional(),
       }).parse(req.body);
-      const changed = await prisma.launchTicket.updateMany({
-        where: { id: data.operationId, deviceId: device.id, usedAt: { not: null }, ackAt: null },
-        data: { ackAt: new Date(), launchResult: data.result, errorCode: data.result === 'FAILED' ? data.errorCode ?? 'LAUNCH_ERROR' : null },
-      });
-      if (changed.count !== 1) throw new AppError(ErrorCode.CONCURRENCY_CONFLICT, 'Operation already acknowledged or not consumed');
-      const ticket = await prisma.launchTicket.findUniqueOrThrow({ where: { id: data.operationId }, include: { grant: true } });
-      if (ticket.devicePlatformSessionId) {
-        await prisma.devicePlatformSession.update({
-          where: { id: ticket.devicePlatformSessionId }, data: { lastLaunchResult: data.result },
+
+      const ticket = await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM registered_devices WHERE id = ${device.id}::uuid FOR UPDATE`;
+
+        const currentDevice = await tx.registeredDevice.findUniqueOrThrow({
+          where: { id: device.id },
         });
-      }
-      await prisma.auditLog.create({ data: {
-        actorUserId: ticket.grant.actorUserId,
-        action: data.result === 'DELIVERED' ? 'LAUNCH_DELIVERED' : 'LAUNCH_FAILED',
-        entityType: 'PLATFORM_ACCOUNT', entityId: ticket.grant.platformAccountId,
-        metadata: { deviceId: device.id, operationId: ticket.id, errorCode: data.errorCode ?? null },
-      } });
+
+        if (!currentDevice.enabled || currentDevice.approvalState !== 'APPROVED') {
+          throw new AppError(
+            ErrorCode.FORBIDDEN,
+            'Device is no longer approved'
+          );
+        }
+
+        const existing = await tx.launchTicket.findFirst({
+          where: {
+            id: data.operationId,
+            deviceId: device.id,
+            usedAt: { not: null },
+            revokedAt: null,
+          },
+          include: { grant: true },
+        });
+
+        if (!existing) {
+          throw new AppError(
+            ErrorCode.FORBIDDEN,
+            'Operation not available'
+          );
+        }
+
+        // LaunchTicket no longer stores acknowledgement state.
+
+        if (!existing.devicePlatformSessionId) {
+          throw new AppError(
+            ErrorCode.FORBIDDEN,
+            'Launch operation is not linked to a platform session'
+          );
+        }
+
+        const changed = await tx.devicePlatformSession.updateMany({
+          where: {
+            id: existing.devicePlatformSessionId,
+            version: existing.mappingVersion,
+          },
+          data: {
+            lastLaunchResult: data.result,
+          },
+        });
+
+        if (changed.count !== 1) {
+          throw new AppError(
+            ErrorCode.CONCURRENCY_CONFLICT,
+            'Operation already acknowledged or mapping changed'
+          );
+        }
+
+        await tx.auditLog.create({
+          data: {
+            actorUserId: existing.grant.actorUserId,
+            action:
+              data.result === 'DELIVERED'
+                ? 'LAUNCH_DELIVERED'
+                : 'LAUNCH_FAILED',
+            entityType: 'PLATFORM_ACCOUNT',
+            entityId: existing.grant.platformAccountId,
+            metadata: {
+              deviceId: device.id,
+              phoneNumberId: existing.grant.phoneNumberId,
+              operationId: existing.id,
+              errorCode: data.errorCode ?? null,
+            },
+          },
+        });
+
+        return existing;
+      });
       res.json({ operationId: ticket.id, state: data.result === 'DELIVERED' ? 'BROWSER_LAUNCHED' : 'LAUNCH_FAILED' });
     } catch (err) { next(err); }
   }

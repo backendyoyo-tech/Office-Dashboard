@@ -1,5 +1,19 @@
 ﻿# Secure launcher implementation ledger — 2026-09-22
 
+## Current execution: 2026-09-23
+
+N00 inspection is documented in `N00_AUDIT_REPORT.md`. Baseline checks and lint repair evidence are in `QA_EVIDENCE/N00-20260923.md`.
+
+| Node | Status | Gate |
+|---|---|---|
+| N00 | COMPLETE | 118 Vitest tests; backend/frontend build and lint pass; backend typecheck pass; Python 5 pass/1 privilege skip |
+| N01 | COMPLETE | CONTRACT.md repair contract: enrollment, trust, scoped grants/tickets, lifecycle, APIs, audit and failure behavior; documentation-only, N00 runtime checks retained |
+| N02 | COMPLETE | DB_MIGRATION_VALIDATION.md: fresh/populated upgrade, rollback/reapply, backfill, negatives, Prisma parity, 118 tests/build/lint/typecheck |
+| N03 | IN PROGRESS | URL normalization hardening and association guard tests |
+| N02 through N18 | NOT YET REVALIDATED | Existing code is not node completion; execute sequentially |
+
+## Historical implementation record (not current certification)
+
 | Area | State | Evidence / remaining work |
 |---|---|---|
 | Baseline and contract | VERIFIED | Isolated schema, baseline API smoke, threat and data contract documented. |

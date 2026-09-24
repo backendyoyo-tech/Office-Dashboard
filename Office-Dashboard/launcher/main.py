@@ -111,8 +111,8 @@ class HairRapLauncher:
         result = self.client.register(device_code, friendly_name, hostname)
         
         if result.get('success'):
-            device_id = result.get('device_id')
-            api_key = result.get('api_key')
+            device_id = result.get('deviceId') or result.get('device_id')
+            api_key = result.get('apiKey') or result.get('api_key')
             
             if device_id:
                 self.config['device_id'] = device_id
@@ -208,7 +208,7 @@ class HairRapLauncher:
             return
         
         result = self.client.heartbeat()
-        if result.get('success'):
+        if result.get('success') or result.get('status') == 'ok':
             logger.debug("Heartbeat sent successfully")
             self.client.report_platform_capability()
         else:

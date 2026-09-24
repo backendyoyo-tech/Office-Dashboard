@@ -1,6 +1,7 @@
 import argon2 from 'argon2';
 import crypto from 'crypto';
 import prisma from '@/lib/db/prisma';
+import { randomUUID } from 'crypto';
 import { AUTH_LOCKOUT_MS, AUTH_MAX_FAILED_ATTEMPTS } from '@/modules/auth/auth.service';
 import { requireActivePhoneAccountLink } from '@/lib/association';
 import { assertApprovedPlatformDevice } from '@/lib/platform-device';
@@ -8,7 +9,7 @@ import { AppError, ErrorCode, ForbiddenError } from '@/types/errors';
 
 export type PlatformLaunchOperation = 'SETUP' | 'OPEN' | 'RECONNECT';
 
-/** Server-side, one-use password step-up. No grant is issued on a public route without local device proof. */
+/** Server-side one-use password step-up. Issuance requires local proof of the returned grant ID. */
 export class LaunchGrantService {
   async createForPlatform(input: {
     actorUserId: string; phoneNumberId: string; platformAccountId: string;
@@ -23,15 +24,18 @@ export class LaunchGrantService {
     }
     const valid = await argon2.verify(user.passwordHash, input.password);
     if (!valid) {
-      const attempts = user.failedLoginAttempts + 1;
-      await prisma.appUser.update({ where: { id: user.id }, data: {
-        failedLoginAttempts: attempts,
-        lockedUntil: attempts >= AUTH_MAX_FAILED_ATTEMPTS ? new Date(Date.now() + AUTH_LOCKOUT_MS) : null,
-      } });
-      await prisma.auditLog.create({ data: {
-        actorUserId: user.id, action: 'LAUNCH_CHALLENGE_FAILED', entityType: 'USER', entityId: user.id,
-        metadata: { reason: 'PASSWORD_REJECTED' },
-      } });
+      await prisma.$transaction(async tx => {
+        const failed = await tx.appUser.update({ where: { id: user.id }, data: { failedLoginAttempts: { increment: 1 } } });
+        if (failed.failedLoginAttempts >= AUTH_MAX_FAILED_ATTEMPTS) {
+          await tx.appUser.update({ where: { id: user.id }, data: { lockedUntil: new Date(Date.now() + AUTH_LOCKOUT_MS) } });
+        }
+        await tx.auditLog.create({
+          data: {
+            actorUserId: user.id, action: 'LAUNCH_CHALLENGE_FAILED', entityType: 'USER', entityId: user.id,
+            metadata: { reason: 'PASSWORD_REJECTED' },
+          }
+        });
+      });
       throw new AppError(ErrorCode.INVALID_CREDENTIALS, 'Reauthentication failed');
     }
     await prisma.appUser.update({ where: { id: user.id }, data: { failedLoginAttempts: 0, lockedUntil: null } });
@@ -44,17 +48,22 @@ export class LaunchGrantService {
     const secret = crypto.randomBytes(32).toString('hex');
     const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
     const expiresAt = new Date(Date.now() + 4 * 60 * 1000);
-    const grant = await prisma.launchGrant.create({ data: {
-      secretHash, actorUserId: user.id, authSessionHash: user.refreshTokenHash,
-      userVersion: user.version, deviceId: input.deviceId,
-      phoneNumberId: input.phoneNumberId, platformAccountId: input.platformAccountId,
-      operation: input.operation, expiresAt,
-    } });
-    await prisma.auditLog.create({ data: {
-      actorUserId: user.id, action: 'LAUNCH_GRANT_ISSUED', entityType: 'PLATFORM_ACCOUNT',
-      entityId: input.platformAccountId,
-      metadata: { deviceId: input.deviceId, phoneNumberId: input.phoneNumberId, operation: input.operation },
-    } });
+    const grant = await prisma.launchGrant.create({
+      data: {
+        id: randomUUID(),
+        secretHash, actorUserId: user.id, authSessionHash: user.refreshTokenHash,
+        userVersion: user.version, deviceId: input.deviceId,
+        phoneNumberId: input.phoneNumberId, platformAccountId: input.platformAccountId,
+        operation: input.operation, expiresAt,
+      }
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorUserId: user.id, action: 'LAUNCH_GRANT_ISSUED', entityType: 'PLATFORM_ACCOUNT',
+        entityId: input.platformAccountId,
+        metadata: { deviceId: input.deviceId, phoneNumberId: input.phoneNumberId, operation: input.operation },
+      }
+    });
     return { grantId: grant.id, grantSecret: secret, expiresAt };
   }
 }

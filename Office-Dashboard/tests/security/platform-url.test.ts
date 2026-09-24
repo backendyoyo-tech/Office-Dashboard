@@ -18,6 +18,15 @@ describe('platform profile URL policy', () => {
   });
 
   it.each([
+    ['instagram', 'https://www.instagram.com\\example'],
+    ['instagram', 'https://www.insta\ngram.com/example'],
+    ['instagram', 'https://www.ｉnstagram.com/example'],
+    ['instagram', 'https://www.instagram.com/a/../example'],
+    ['instagram', 'https://www.instagram.com:443/example'],
+    ['instagram', 'https://www.instagram.com/example#fragment'],
+    ['facebook', 'https://www.facebook.com/l.php'],
+    ['x', 'https://x.com/intent'],
+    ['x', 'https://x.com/logout'],
     ['instagram', 'http://www.instagram.com/example'],
     ['instagram', 'https://www.instagram.com.evil.test/example'],
     ['instagram', 'https://user:pass@www.instagram.com/example'],

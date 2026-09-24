@@ -30,6 +30,8 @@ export function officialPlatformHome(slug: string): string | null {
 /** Validate public navigation metadata without treating it as login identity. */
 export function validatePlatformProfileUrl(raw: string, slug: string): string {
   const value = raw.trim();
+  // Reject ambiguous raw input before WHATWG URL canonicalization can hide it.
+  if (/[^\x21-\x7e]|\\/.test(value)) throw new Error('Profile URL contains ambiguous characters');
   if (value.length > 500 || !/^https:\/\//i.test(value)) throw new Error('Profile URL must use HTTPS');
   if (value.includes('%')) throw new Error('Encoded profile URLs are not allowed');
   const authority = /^https:\/\/([^/?#]+)/i.exec(value)?.[1] ?? '';
@@ -44,6 +46,12 @@ export function validatePlatformProfileUrl(raw: string, slug: string): string {
     throw new Error('Profile URL host is not approved for this platform');
   }
   const path = url.pathname;
+  if (/\/(?:\.|\.\.)(?:\/|$)/.test(value.slice(value.indexOf(authority) + authority.length))) {
+    throw new Error('Dot segments are not permitted');
+  }
+  if (/^\/(?:redirect|url|away|out|l\.php|login|logout|intent|share)(?:\/|$)/i.test(path)) {
+    throw new Error('Redirect and action endpoints are not profile URLs');
+  }
   if (/%|\\/.test(path)) throw new Error('Encoded or escaped profile paths are not allowed');
   const simpleHandle = /^\/[a-zA-Z0-9._-]{1,100}\/?$/;
   const isHome = path === '/';

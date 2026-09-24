@@ -81,6 +81,7 @@ const AccountDetailPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
+          
           <button
             onClick={() => navigate(-1)}
             className="rounded-lg border border-gray-300 p-2 text-gray-500 hover:bg-gray-50"
@@ -88,7 +89,7 @@ const AccountDetailPage: React.FC = () => {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
                 <span className="text-lg font-bold text-gray-600">
                   {account.platform?.displayName?.charAt(0) || '?'}

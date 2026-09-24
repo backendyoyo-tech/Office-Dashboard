@@ -1,4 +1,5 @@
 import prisma from '@/lib/db/prisma';
+import type { Prisma } from '@prisma/client';
 import { AppError, ConflictError, ErrorCode, NotFoundError } from '@/types/errors';
 
 /**
@@ -33,6 +34,8 @@ export interface ConcurrencyOptions {
   extraWhere?: Record<string, any>;
   /** Fields to return alongside the updated row. */
   include?: Record<string, any>;
+  /** Optional security event committed atomically with the versioned write. */
+  audit?: Prisma.AuditLogUncheckedCreateInput;
 }
 
 export class ConcurrencyConflictError extends ConflictError {
@@ -78,6 +81,7 @@ export async function updateWithVersion(opts: ConcurrencyOptions) {
 
     // The transaction holds the row lock until this read and commit complete,
     // so the response cannot accidentally describe a later writer's changes.
+    if (opts.audit) await tx.auditLog.create({ data: opts.audit });
     return delegate.findUniqueOrThrow({
       where: { id: opts.id }, ...(opts.include ? { include: opts.include } : {}),
     });

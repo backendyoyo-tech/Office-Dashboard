@@ -75,24 +75,32 @@ class DashboardClient:
         """
         endpoint = f"{self.dashboard_url}/api/v1/launcher/register"
         payload = {
-            "device_code": device_code,
-            "friendly_name": friendly_name,
+            "deviceCode": device_code,
+            "friendlyName": friendly_name,
             "hostname": hostname,
             "platform": "windows",
-            "launcher_version": "1.0.0",
+            "launcherVersion": "1.0.0",
         }
-        
         try:
             response = self.session.post(endpoint, json=payload, timeout=30)
-            response.raise_for_status()
+            # response.raise_for_status()
+            if not response.ok:
+               logger.error(
+                  f"Registration failed: HTTP {response.status_code} - {response.text}"
+   )
+            return {
+        "success": False,
+        "error": response.text,
+        "status": response.status_code,
+     }    
             result = response.json()
-            
-            # Update device_id if provided
-            if 'device_id' in result:
-                self.device_id = result['device_id']
+
+            if 'deviceId' in result:
+                self.device_id = result['deviceId']
                 logger.info(f"Device registered with ID: {self.device_id}")
-            
+
             return result
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Registration failed: {e}")
             return {"success": False, "error": str(e)}

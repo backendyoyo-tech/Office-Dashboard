@@ -10,6 +10,9 @@ frontend/dist/
 frontend/build/
 
 coverage/
+.local/
+__pycache__/
+launcher/launcher_config.json
 *.log
 
 .vscode/
