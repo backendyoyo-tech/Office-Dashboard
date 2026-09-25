@@ -212,7 +212,9 @@ export const platformsApi = {
 
 export const devicesApi = {
   list: (filters?: DeviceFilters) =>
-    api.get<PaginatedResponse<RegisteredDevice>>('/devices', { params: filters }).then((r) => r.data),
+    api
+      .get<PaginatedResponse<RegisteredDevice>>('/devices', { params: filters })
+      .then((r) => r.data),
 
   getById: (id: string) =>
     api.get<RegisteredDevice>(`/devices/${id}`).then((r) => r.data),
@@ -221,13 +223,34 @@ export const devicesApi = {
     api.post<RegisterDeviceResponse>('/devices', data).then((r) => r.data),
 
   toggleEnabled: (id: string, enabled: boolean, version: number) =>
-    api.patch<RegisteredDevice>(`/devices/${id}`, { enabled, version }).then((r) => r.data),
+    api
+      .patch<RegisteredDevice>(`/devices/${id}`, { enabled, version })
+      .then((r) => r.data),
 
   approveLauncher: (id: string, version: number) =>
-    api.post<RegisteredDevice>(`/devices/${id}/approve-launcher`, { version }).then((r) => r.data),
+    api
+      .post<RegisteredDevice>(`/devices/${id}/approve-launcher`, { version })
+      .then((r) => r.data),
 
   revokeLauncher: (id: string, version: number) =>
-    api.post<RegisteredDevice>(`/devices/${id}/revoke-launcher`, { version }).then((r) => r.data),
+    api
+      .post<RegisteredDevice>(`/devices/${id}/revoke-launcher`, { version })
+      .then((r) => r.data),
+
+  pairingRequests: () =>
+    api
+      .get('/devices/pairing-requests')
+      .then((r) => r.data),
+
+  approvePairing: (id: string) =>
+    api
+      .post(`/devices/pairing-requests/${id}/approve`)
+      .then((r) => r.data),
+
+  rejectPairing: (id: string) =>
+    api
+      .post(`/devices/pairing-requests/${id}/reject`)
+      .then((r) => r.data),
 };
 
 // ============================================================
