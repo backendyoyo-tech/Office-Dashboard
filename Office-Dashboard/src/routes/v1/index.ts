@@ -10,8 +10,10 @@ import recoveryMethodsRoutes from '@/modules/recovery-methods/recovery-methods.r
 import dashboardRoutes from '@/modules/dashboard/dashboard.routes';
 import auditRoutes from '@/modules/audit/audit.routes';
 import devicesRoutes from '@/modules/devices/devices.routes';
-import whatsappRoutes from '@/modules/whatsapp/whatsapp.routes';
+import whatsappRoutes from '@/modules/whatsapp/whatsapp.routes';   
 import launcherRoutes from '@/modules/launcher/launcher.routes';
+import launcherPairingRoutes from '@/modules/launcher/pairing.routes';
+import devicePairingRoutes from '@/modules/devices/pairing.routes';
 import secureLauncherRoutes from '@/modules/secure-launcher/secure-launcher.routes';
 
 const router = Router();
@@ -56,10 +58,13 @@ router.get('/platforms', authenticate, (req, res, next) => platformAccountsContr
 router.use('/audit-logs', auditRoutes);
 
 // Devices (Phase 2)
+router.use('/devices', devicePairingRoutes);
 router.use('/devices', devicesRoutes);
 
 // Launcher API (Phase 2)
 router.use('/launcher', launcherRoutes);
+router.use('/launcher', launcherPairingRoutes);
+
 router.use('/launch', secureLauncherRoutes);
 
 export default router;

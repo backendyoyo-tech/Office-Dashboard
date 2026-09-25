@@ -96,13 +96,35 @@ router.post('/sessions/:sessionId/confirm', async (req, res, next) => {
       await requireActivePhoneAccountLink(input.phoneNumberId, input.platformAccountId, tx);
       const delivered = await tx.launchTicket.findFirst({
         where: {
-          devicePlatformSessionId: sessionId, mappingVersion: input.version,
-          deviceId: input.deviceId, operation: { in: ['SETUP', 'RECONNECT'] },
+          devicePlatformSessionId: sessionId,
+          mappingVersion: input.version,
+          deviceId: input.deviceId,
+          operation: { in: ['SETUP', 'RECONNECT'] },
           revokedAt: null,
-          grant: { actorUserId: req.user!.id, phoneNumberId: input.phoneNumberId, platformAccountId: input.platformAccountId },
-        }
+        },
       });
-      if (!delivered) throw new ForbiddenError(ErrorCode.FORBIDDEN, 'Open setup on this PC successfully before confirming identity');
+
+      let validDeliveredTicket = false;
+
+      if (delivered) {
+        const grant = await tx.launchGrant.findUnique({
+          where: { id: delivered.grantId },
+        });
+
+        validDeliveredTicket =
+          !!grant &&
+          grant.actorUserId === req.user!.id &&
+          grant.phoneNumberId === input.phoneNumberId &&
+          grant.platformAccountId === input.platformAccountId;
+      }
+
+      if (!validDeliveredTicket) {
+        throw new ForbiddenError(
+          ErrorCode.FORBIDDEN,
+          'Open setup on this PC successfully before confirming identity'
+        );
+      }
+      // if (!delivered) throw new ForbiddenError(ErrorCode.FORBIDDEN, 'Open setup on this PC successfully before confirming identity');
       const changed = await tx.devicePlatformSession.updateMany({
         where: {
           id: sessionId, deviceId: input.deviceId, version: input.version,
@@ -161,7 +183,7 @@ router.post('/sessions/:sessionId/relogin-required', async (req, res, next) => {
 
 router.get('/operations/:operationId', async (req, res, next) => {
   try {
-    const { operationId } = z.object({ operationId: uuid }).parse(req.params);
+    const { operationId } = req.params;
 
     const ticket = await prisma.launchTicket.findFirst({
       where: {
@@ -169,20 +191,32 @@ router.get('/operations/:operationId', async (req, res, next) => {
         usedAt: { not: null },
         revokedAt: null,
       },
-      include: {
-        grant: true,
-        devicePlatformSession: true,
-      },
     });
 
-    if (!ticket || ticket.grant.actorUserId !== req.user!.id) {
+    if (!ticket) {
       throw new NotFoundError(
         ErrorCode.NOT_FOUND,
         'Operation not found'
       );
     }
 
-    const launchResult = ticket.devicePlatformSession?.lastLaunchResult;
+    const grant = await prisma.launchGrant.findUnique({
+      where: { id: ticket.grantId },
+    });
+
+    if (!grant || grant.actorUserId !== req.user!.id) {
+      throw new NotFoundError(
+        ErrorCode.NOT_FOUND,
+        'Operation not found'
+      );
+    }
+
+    const devicePlatformSession =
+      await prisma.devicePlatformSession.findUnique({
+        where: { id: ticket.devicePlatformSessionId },
+      });
+
+    const launchResult = devicePlatformSession?.lastLaunchResult;
 
     const state =
       ticket.revokedAt

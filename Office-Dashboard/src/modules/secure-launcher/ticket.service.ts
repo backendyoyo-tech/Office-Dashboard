@@ -166,13 +166,22 @@ export class LaunchTicketService {
     return prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM registered_devices WHERE id = ${authenticatedDeviceId}::uuid FOR UPDATE`;
       const ticket = await tx.launchTicket.findUnique({
-        where: { nonceHash: hash }, include: {
-          grant: true,
-          devicePlatformSession: { include: { platformAccount: { include: { platform: true } } } },
-        }
+        where: { nonceHash: hash },
       });
-      const mapping = ticket?.devicePlatformSession;
-      const grant = ticket?.grant;
+
+      const mapping = ticket
+        ? await tx.devicePlatformSession.findUnique({
+          where: { id: ticket.devicePlatformSessionId },
+        })
+        : null;
+
+      const grant = ticket
+        ? await tx.launchGrant.findUnique({
+          where: { id: ticket.grantId },
+        })
+        : null;
+      // const mapping = ticket?.devicePlatformSession;
+      // const grant = ticket?.grant;
       const now = new Date();
       if (!ticket || !mapping || !grant || ticket.deviceId !== authenticatedDeviceId ||
         ticket.operation !== claims.operation || grant.operation !== claims.operation ||
@@ -197,7 +206,19 @@ export class LaunchTicketService {
         data: { usedAt: now },
       });
       if (used.count !== 1) throw new ForbiddenError(ErrorCode.LAUNCH_TICKET_INVALID, 'Ticket already used');
-      const targetUrl = officialPlatformHome(mapping.platformAccount.platform.slug);
+      const platformAccount = await tx.platformAccount.findUnique({
+        where: { id: mapping.platformAccountId },
+        include: { platform: true },
+      });
+
+      if (!platformAccount) {
+        throw new ForbiddenError(
+          ErrorCode.LAUNCH_TICKET_INVALID,
+          'Platform account not found'
+        );
+      }
+
+      const targetUrl = officialPlatformHome(platformAccount.platform.slug);
       if (!targetUrl) throw new ForbiddenError(ErrorCode.LAUNCH_TICKET_INVALID, 'Platform is not supported');
       return { operationId: ticket.id, operation: ticket.operation, profileKey: mapping.profileKey, targetUrl };
     });

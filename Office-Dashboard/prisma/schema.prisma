@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
 }
 
 model AppUser {
@@ -73,28 +73,27 @@ model Platform {
 }
 
 model PlatformAccount {
-  id                     String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  platformId             Int                     @map("platform_id")
-  displayName            String?                 @map("display_name") @db.VarChar(160)
-  accountHandle          String?                 @map("account_handle") @db.VarChar(160)
-  loginIdentifier        String?                 @map("login_identifier") @db.Citext
-  profileUrl             String?                 @map("profile_url")
-  externalAccountId      String?                 @map("external_account_id") @db.VarChar(160)
-  accountStatus          AccountStatus           @default(UNKNOWN) @map("account_status")
-  notes                  String?
-  createdBy              String                  @map("created_by") @db.Uuid
-  updatedBy              String                  @map("updated_by") @db.Uuid
-  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt             DateTime?               @map("archived_at") @db.Timestamptz(6)
-  version                Int                     @default(1)
-  credential             AccountCredential?
-  recoveryMethods        AccountRecoveryMethod[]
-  accountLinks           PhoneAccountLink[]
-  devicePlatformSessions DevicePlatformSession[]
-  creator                AppUser                 @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  platform               Platform                @relation(fields: [platformId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  updater                AppUser                 @relation("AccountUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  platformId        Int                     @map("platform_id")
+  displayName       String?                 @map("display_name") @db.VarChar(160)
+  accountHandle     String?                 @map("account_handle") @db.VarChar(160)
+  loginIdentifier   String?                 @map("login_identifier") @db.Citext
+  profileUrl        String?                 @map("profile_url")
+  externalAccountId String?                 @map("external_account_id") @db.VarChar(160)
+  accountStatus     AccountStatus           @default(UNKNOWN) @map("account_status")
+  notes             String?
+  createdBy         String                  @map("created_by") @db.Uuid
+  updatedBy         String                  @map("updated_by") @db.Uuid
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?               @map("archived_at") @db.Timestamptz(6)
+  version           Int                     @default(1)
+  credential        AccountCredential?
+  recoveryMethods   AccountRecoveryMethod[]
+  accountLinks      PhoneAccountLink[]
+  creator           AppUser                 @relation("AccountCreatedBy", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  platform          Platform                @relation(fields: [platformId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updater           AppUser                 @relation("AccountUpdatedBy", fields: [updatedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([platformId, accountStatus], map: "idx_platform_accounts_platform_status")
   @@index([loginIdentifier], map: "idx_platform_accounts_login_identifier")
@@ -251,8 +250,6 @@ model DevicePlatformSession {
   disabledAt            DateTime?                     @map("disabled_at")
   createdAt             DateTime                      @default(now()) @map("created_at")
   updatedAt             DateTime                      @default(now()) @map("updated_at")
-  platformAccount       PlatformAccount               @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
-  launchTickets         LaunchTicket[]
 
   @@unique([deviceId, platformAccountId], name: "deviceId_platformAccountId")
   @@index([deviceId])
@@ -276,8 +273,6 @@ model LaunchGrant {
   revokedAt         DateTime?        @map("revoked_at")
   createdAt         DateTime         @default(now()) @map("created_at")
 
-  tickets LaunchTicket[]
-
   @@index([actorUserId])
   @@index([deviceId])
   @@index([expiresAt])
@@ -298,9 +293,6 @@ model LaunchTicket {
   usedAt                  DateTime?        @map("used_at")
   revokedAt               DateTime?        @map("revoked_at")
   createdAt               DateTime         @default(now()) @map("created_at")
-
-  grant                 LaunchGrant           @relation(fields: [grantId], references: [id], onDelete: Cascade)
-  devicePlatformSession DevicePlatformSession @relation(fields: [devicePlatformSessionId], references: [id], onDelete: Cascade)
 
   @@index([deviceId])
   @@index([devicePlatformSessionId])
@@ -366,6 +358,14 @@ enum DeviceStatus {
   @@map("device_status")
 }
 
+enum DevicePairingStatus {
+  PENDING
+  APPROVED
+  CONSUMED
+  EXPIRED
+  REJECTED
+}
+
 enum WhatsAppSessionStatus {
   SETUP_REQUIRED
   LINKING
@@ -396,4 +396,35 @@ enum launch_operation {
   SETUP
   OPEN
   RECONNECT
+}
+
+
+model DevicePairingRequest {
+  id                String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pairingCode       String             @unique @map("pairing_code") @db.VarChar(20)
+  secretHash        String             @map("secret_hash") @db.VarChar(64)
+
+  hostname          String?            @db.VarChar(255)
+  friendlyName      String?            @map("friendly_name") @db.VarChar(120)
+  launcherVersion   String?            @map("launcher_version") @db.VarChar(40)
+
+  apiKeyCiphertext  String             @map("api_key_ciphertext")
+  apiKeyIv          String             @map("api_key_iv") @db.VarChar(64)
+  apiKeyAuthTag     String             @map("api_key_auth_tag") @db.VarChar(64)
+
+  deviceId          String?            @map("device_id") @db.Uuid
+  status            DevicePairingStatus @default(PENDING)
+
+  expiresAt         DateTime           @map("expires_at") @db.Timestamptz(6)
+  approvedAt        DateTime?          @map("approved_at") @db.Timestamptz(6)
+  approvedBy        String?            @map("approved_by") @db.Uuid
+  consumedAt        DateTime?          @map("consumed_at") @db.Timestamptz(6)
+  apiKeyHash        String             @map("api_key_hash") @db.VarChar(64)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  
+  @@index([status, expiresAt])
+  @@index([deviceId])
+  @@index([hostname, status])
+  @@map("device_pairing_requests")
 }

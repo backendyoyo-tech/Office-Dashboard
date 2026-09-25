@@ -88,13 +88,23 @@ export class LauncherController {
             usedAt: { not: null },
             revokedAt: null,
           },
-          include: { grant: true },
         });
 
         if (!existing) {
           throw new AppError(
             ErrorCode.FORBIDDEN,
             'Operation not available'
+          );
+        }
+
+        const grant = await tx.launchGrant.findUnique({
+          where: { id: existing.grantId },
+        });
+
+        if (!grant) {
+          throw new AppError(
+            ErrorCode.FORBIDDEN,
+            'Launch grant not found'
           );
         }
 
@@ -126,16 +136,16 @@ export class LauncherController {
 
         await tx.auditLog.create({
           data: {
-            actorUserId: existing.grant.actorUserId,
+            actorUserId: grant.actorUserId,
             action:
               data.result === 'DELIVERED'
                 ? 'LAUNCH_DELIVERED'
                 : 'LAUNCH_FAILED',
             entityType: 'PLATFORM_ACCOUNT',
-            entityId: existing.grant.platformAccountId,
+            entityId: grant.platformAccountId,
             metadata: {
               deviceId: device.id,
-              phoneNumberId: existing.grant.phoneNumberId,
+              phoneNumberId: grant.phoneNumberId,
               operationId: existing.id,
               errorCode: data.errorCode ?? null,
             },
